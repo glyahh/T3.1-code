@@ -30,6 +30,7 @@ export interface PersistedUiState {
   sidebarProjectScopeKeys?: string[];
   threadChangedFilesExpansionVersion?: number;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
+  threadTimelineExpandedById?: Record<string, Record<string, boolean>>;
   pullRequestMergeMethod?: string;
 }
 
@@ -42,6 +43,7 @@ export interface UiProjectState {
 export interface UiThreadState {
   threadLastVisitedAtById: Record<string, string>;
   threadChangedFilesExpandedById: Record<string, Record<string, boolean>>;
+  threadTimelineExpandedById?: Record<string, Record<string, boolean>>;
 }
 
 export interface UiEndpointState {
@@ -146,6 +148,13 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
     projectExpandedById,
     projectOrder,
     threadLastVisitedAtById: sanitizeTimestampRecord(parsed.threadLastVisitedAtById),
+    ...(parsed.threadTimelineExpandedById === undefined
+      ? {}
+      : {
+          threadTimelineExpandedById: sanitizePersistedThreadChangedFilesExpanded(
+            parsed.threadTimelineExpandedById,
+          ),
+        }),
     threadChangedFilesExpandedById:
       parsed.threadChangedFilesExpansionVersion === THREAD_CHANGED_FILES_EXPANSION_VERSION
         ? sanitizePersistedThreadChangedFilesExpanded(parsed.threadChangedFilesExpandedById)
@@ -235,6 +244,9 @@ export function persistState(state: UiState): void {
             : null,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
+        ...(state.threadTimelineExpandedById === undefined
+          ? {}
+          : { threadTimelineExpandedById: state.threadTimelineExpandedById }),
         pullRequestMergeMethod: state.pullRequestMergeMethod,
       } satisfies PersistedUiState),
     );

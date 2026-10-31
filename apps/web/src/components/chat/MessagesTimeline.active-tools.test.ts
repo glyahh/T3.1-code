@@ -1,6 +1,10 @@
 import { RunId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { deriveMessagesTimelineRows, liveWorkEntryLabel } from "./MessagesTimeline.logic";
+import {
+  deriveMessagesTimelineRows,
+  liveWorkEntryLabel,
+  timelineTurnFoldRunIdsByEntryId,
+} from "./MessagesTimeline.logic";
 
 describe("long active tool groups", () => {
   it.each([false, true])(
@@ -47,5 +51,69 @@ describe("long active tool groups", () => {
         expect(details[0]?.groupedEntries).toEqual(live?.groupedEntries);
       }
     },
+  );
+});
+
+it("keeps live turn and tool disclosures stable through append, manual collapse and completion", () => {
+  const runId = RunId.make("compact-run");
+  const createdAt = "2026-10-12T00:00:00Z";
+  const work = (id: string) => ({
+    id,
+    kind: "work" as const,
+    createdAt,
+    entry: {
+      id,
+      runId,
+      createdAt,
+      label: "Read file",
+      requestKind: "file-read",
+      tone: "tool" as const,
+      toolLifecycleStatus: "completed" as const,
+    },
+  });
+  const input = {
+    timelineEntries: [work("first")],
+    isWorking: true,
+    runningRunId: runId,
+    collapsedLiveRunIds: new Set<RunId>(),
+    turnDiffSummaries: [],
+    supportsConversationRollback: false,
+  };
+  expect(timelineTurnFoldRunIdsByEntryId(input).get("first")).toBe(runId);
+  const initial = deriveMessagesTimelineRows(input);
+  expect(initial.find((row) => row.kind === "turn-fold")).toMatchObject({ expanded: true });
+  const live = initial.find((row) => row.kind === "work-live");
+  const appendedInput = {
+    ...input,
+    timelineEntries: [work("first"), work("second")],
+    expandedWorkGroupIds: new Set(["work-group:first"]),
+  };
+  const appended = deriveMessagesTimelineRows(appendedInput);
+  expect(appended.find((row) => row.kind === "work-live")).toMatchObject({
+    id: live?.id,
+    expanded: true,
+  });
+  const collapsed = deriveMessagesTimelineRows({
+    ...appendedInput,
+    collapsedLiveRunIds: new Set([runId]),
+  });
+  expect(collapsed.find((row) => row.kind === "turn-fold")).toMatchObject({ expanded: false });
+  expect(
+    collapsed.some(
+      (row) => row.kind === "work" || row.kind === "work-live" || row.kind === "thinking",
+    ),
+  ).toBe(false);
+  const completed = deriveMessagesTimelineRows({
+    ...appendedInput,
+    isWorking: false,
+    runningRunId: null,
+    expandedRunIds: new Set([runId]),
+  });
+  expect(completed.find((row) => row.kind === "work-toggle")).toMatchObject({
+    id: live?.id,
+    expanded: true,
+  });
+  expect(completed.find((row) => row.kind === "turn-fold")?.id).toBe(
+    initial.find((row) => row.kind === "turn-fold")?.id,
   );
 });

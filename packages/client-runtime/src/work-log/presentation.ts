@@ -514,10 +514,14 @@ function summaryActionPriority(action: ToolGroupAction | T3McpToolSummaryAction)
   }
 }
 
-export function summarizeToolGroup(entries: ReadonlyArray<WorkLogPresentationEntry>): {
+export function summarizeToolGroup(
+  entries: ReadonlyArray<WorkLogPresentationEntry>,
+  maxActions = 2,
+): {
   summary: string;
   hasFailure: boolean;
 } {
+  entries = [...new Map(entries.map((entry) => [entry.id, entry])).values()];
   const toolEntries = entries.filter((entry) => entry.itemType !== "reasoning");
   if (entries.length > 0 && toolEntries.length === 0) {
     return {
@@ -566,7 +570,7 @@ export function summarizeToolGroup(entries: ReadonlyArray<WorkLogPresentationEnt
   }));
   const selected = [...summaries]
     .sort((a, b) => a.priority - b.priority || a.index - b.index)
-    .slice(0, 2)
+    .slice(0, maxActions)
     .sort((a, b) => a.index - b.index);
   const labels = selected.map(({ label }) => label);
   if (sources.size > 0) {

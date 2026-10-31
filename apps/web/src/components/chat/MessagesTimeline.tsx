@@ -1,3 +1,5 @@
+import { captureExecutionRows, settleExecutionRows } from "./agentExecutionMotion";
+import { useUiStateStore } from "~/uiStateStore";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
@@ -113,8 +115,7 @@ import {
   WorkGroupSection,
   WorkingTimelineRow,
   ThinkingTimelineRow,
-  LiveWorkEntryTimelineRow,
-  WorkGroupToggleTimelineRow,
+  WorkGroupTimelineRow,
 } from "./TimelineWorkGroupRows";
 import { UserMessageRow } from "./TimelineUserMessageRow";
 import {
@@ -405,6 +406,29 @@ const ConversationTimeline = memo(function ConversationTimeline({
   historyControls,
 }: MessagesTimelineProps) {
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
+  const savedDisclosures = useUiStateStore(
+    (state) => state.threadTimelineExpandedById?.[listIdentityKey],
+  );
+  const collapsedLiveRunIds = new Set(
+    Object.entries(savedDisclosures ?? {})
+      .filter(([key, expanded]) => key.startsWith("run:") && !expanded)
+      .map(([key]) => key.slice(4) as RunId),
+  );
+  const restoredDisclosures = (prefix: string) =>
+    Object.entries(savedDisclosures ?? {})
+      .filter(([key, expanded]) => expanded && key.startsWith(prefix))
+      .map(([key]) => key.slice(prefix.length));
+  const persistDisclosure = (key: string, expanded: boolean) => {
+    useUiStateStore.setState((state) => ({
+      threadTimelineExpandedById: {
+        ...state.threadTimelineExpandedById,
+        [listIdentityKey]: {
+          ...state.threadTimelineExpandedById?.[listIdentityKey],
+          [key]: expanded,
+        },
+      },
+    }));
+  };
   // Snapshot restore positions on identity changes; ongoing scroll writes must not move them.
   // Find open at the opening is part of the snapshot: opening find later
   // announces its own navigation (threadFindStore's announceOpening).
@@ -413,10 +437,14 @@ const ConversationTimeline = memo(function ConversationTimeline({
     findOpenAtOpening: findOpen,
   }));
   const [expandedRunIds, setExpandedRunIds] = useState<ReadonlySet<RunId>>(
-    () => listState.rememberedPosition?.disclosures?.runs ?? new Set(),
+    () =>
+      listState.rememberedPosition?.disclosures?.runs ??
+      new Set(restoredDisclosures("run:").map((id) => id as RunId)),
   );
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(
-    () => listState.rememberedPosition?.disclosures?.workGroups ?? new Set(),
+    () =>
+      listState.rememberedPosition?.disclosures?.workGroups ??
+      new Set(restoredDisclosures("group:")),
   );
   const [expandedAttemptIds, setExpandedAttemptIds] = useState<ReadonlySet<RunAttemptId>>(
     () => listState.rememberedPosition?.disclosures?.attempts ?? new Set(),
@@ -453,8 +481,11 @@ const ConversationTimeline = memo(function ConversationTimeline({
     // A viewer pinned in another thread must not keep live follow off here,
     // nor when that thread comes back.
     setFullscreenAppRowId(null);
-    paintedExpandedRunIds = rememberedPosition?.disclosures?.runs ?? new Set();
-    paintedExpandedWorkGroupIds = rememberedPosition?.disclosures?.workGroups ?? new Set();
+    paintedExpandedRunIds =
+      rememberedPosition?.disclosures?.runs ??
+      new Set(restoredDisclosures("run:").map((id) => id as RunId));
+    paintedExpandedWorkGroupIds =
+      rememberedPosition?.disclosures?.workGroups ?? new Set(restoredDisclosures("group:"));
     paintedExpandedAttemptIds = rememberedPosition?.disclosures?.attempts ?? new Set();
     setExpandedRunIds(paintedExpandedRunIds);
     setExpandedWorkGroupIds(paintedExpandedWorkGroupIds);
@@ -470,6 +501,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const normalizedFindQuery = findQuery.trim();
   const findActive = findExpanded;
 
+  const disclosureMotionRef = useRef<ReturnType<typeof captureExecutionRows>>([]);
   const disclosurePinsEndRef = useRef(false);
   const pinDisclosureToEnd = () => {
     if (!disclosurePinsEndRef.current) return;
@@ -488,6 +520,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
       pinDisclosureToEnd();
       disclosureSettleSecondFrameRef.current = requestAnimationFrame(() => {
         pinDisclosureToEnd();
+        settleExecutionRows(disclosureMotionRef.current);
+        disclosureMotionRef.current = [];
         disclosurePinsEndRef.current = false;
         disclosureAnchorKeyRef.current = null;
         setDisclosureToggleSettling(false);
@@ -498,6 +532,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   };
 
   const suspendEndScrollMaintenanceForDisclosure = (anchorKey: string) => {
+    disclosureMotionRef.current = captureExecutionRows(listRef.current?.getScrollableNode());
     disclosureAnchorKeyRef.current = anchorKey;
     disclosurePinsEndRef.current = resolveTimelineIsAtEnd(listRef.current?.getState()) === true;
     setDisclosureToggleSettling(true);
@@ -510,29 +545,32 @@ const ConversationTimeline = memo(function ConversationTimeline({
     return disclosureAnchorKey === null || row.id === disclosureAnchorKey;
   };
 
-  const onToggleTurnFold = (runId: RunId) => {
+  const onToggleTurnFold = (runId: RunId, active = false) => {
     suspendEndScrollMaintenanceForDisclosure(`turn-fold:${runId}`);
-    setExpandedRunIds((existing) => {
-      const next = new Set(existing);
-      if (next.has(runId)) {
-        next.delete(runId);
-      } else {
-        next.add(runId);
-      }
-      return next;
-    });
+    const next = new Set(expandedRunIds);
+    const running = active;
+    const expanded = running
+      ? collapsedLiveRunIds.has(runId) && !next.has(runId)
+      : !next.has(runId);
+    if (expanded) next.add(runId);
+    else next.delete(runId);
+    setExpandedRunIds(next);
+    persistDisclosure(`run:${runId}`, expanded);
   };
   const onToggleWorkGroup = (groupId: string, anchorKey: string) => {
     suspendEndScrollMaintenanceForDisclosure(anchorKey);
-    setExpandedWorkGroupIds((existing) => {
-      const next = new Set(existing);
-      if (next.has(groupId)) {
-        next.delete(groupId);
-      } else {
-        next.add(groupId);
-      }
-      return next;
-    });
+    const next = new Set(expandedWorkGroupIds);
+    const expanded = !next.has(groupId);
+    if (expanded) next.add(groupId);
+    else next.delete(groupId);
+    setExpandedWorkGroupIds(next);
+    persistDisclosure(`group:${groupId}`, expanded);
+    const entry = timelineEntries.find((item) => `work-group:${item.id}` === groupId);
+    const runId = entry?.kind === "work" ? entry.entry.runId : null;
+    if (runId) {
+      setExpandedRunIds((existing) => new Set(existing).add(runId));
+      persistDisclosure(`run:${runId}`, true);
+    }
   };
   const onToggleAttemptFold = (attemptId: RunAttemptId) => {
     suspendEndScrollMaintenanceForDisclosure(`attempt-fold:${attemptId}`);
@@ -547,7 +585,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     });
   };
 
-  // An interrupted run opens its fold; a newer run closes the previous run's.
+  // Stop opens untouched work; explicit disclosure choices survive subsequent turns.
   const [observedLatestRun, setObservedLatestRun] = useState({
     identity: listIdentityKey,
     runId: latestRun?.runId,
@@ -570,16 +608,13 @@ const ConversationTimeline = memo(function ConversationTimeline({
       previousRunId !== undefined
     ) {
       if (latestRun.runId === previousRunId) {
-        if (observedLatestRun.status === "running" && latestRun.status === "interrupted") {
+        if (
+          observedLatestRun.status === "running" &&
+          latestRun.status === "interrupted" &&
+          savedDisclosures?.[`run:${latestRun.runId}`] === undefined
+        ) {
           setExpandedRunIds((existing) => new Set(existing).add(latestRun.runId));
         }
-      } else {
-        setExpandedRunIds((existing) => {
-          if (!existing.has(previousRunId)) return existing;
-          const next = new Set(existing);
-          next.delete(previousRunId);
-          return next;
-        });
       }
     }
   }
@@ -592,6 +627,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
         runningRunId,
         isWorking,
         runlessWorkActive,
+        collapsedLiveRunIds,
       })
     : null;
   const activeFindRunId =
@@ -633,6 +669,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
         runningRunId,
         isWorking,
         runlessWorkActive,
+        collapsedLiveRunIds,
       })
     ).get(citedEntry.id);
     setCitationExpandedFor(citationRequest.key);
@@ -681,6 +718,9 @@ const ConversationTimeline = memo(function ConversationTimeline({
     latestRun,
     runningRunId,
     expandedRunIds: visibleExpandedRunIds,
+    collapsedLiveRunIds: new Set(
+      [...collapsedLiveRunIds].filter((id) => !visibleExpandedRunIds.has(id)),
+    ),
     expandedAttemptIds: visibleExpandedAttemptIds,
     expandedWorkGroupIds,
     isWorking,
@@ -693,6 +733,26 @@ const ConversationTimeline = memo(function ConversationTimeline({
     worktreeSetup,
   });
   const rows = useStableRows(rawRows, listIdentityKey);
+  const completedMotionRef = useRef<{
+    identity: string;
+    working: boolean;
+    rows: ReturnType<typeof captureExecutionRows>;
+  } | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures visible rows before completion so virtualized removal animates without changing list heights
+  useLayoutEffect(() => {
+    const previous = completedMotionRef.current;
+    if (previous?.identity === listIdentityKey && previous.working && !isWorking) {
+      settleExecutionRows(previous.rows);
+    }
+    completedMotionRef.current = {
+      identity: listIdentityKey,
+      working: isWorking,
+      rows:
+        isWorking && rows.some((row) => row.kind === "turn-fold")
+          ? captureExecutionRows(listRef.current?.getScrollableNode())
+          : [],
+    };
+  }, [rows, listIdentityKey, isWorking, listRef]);
   const matchedApprovalRequestIds = new Set<string>();
   for (const row of pendingApprovalRequestIds.size > 0 ? rows : []) {
     const entries =
@@ -1469,6 +1529,12 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
           ? "group/assistant"
           : null,
       )}
+      data-agent-motion={
+        import.meta.env.DEV &&
+        new URLSearchParams(window.location.search).get("agentMotion") === "original"
+          ? "original"
+          : undefined
+      }
       data-timeline-row-id={row.id}
       data-timeline-row-kind={row.kind}
       data-message-id={
@@ -1495,8 +1561,9 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
               displayLabel={row.displayLabel}
             />
           ) : null}
-          {row.kind === "work-live" ? <LiveWorkEntryTimelineRow row={row} /> : null}
-          {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
+          {row.kind === "work-live" || row.kind === "work-toggle" ? (
+            <WorkGroupTimelineRow row={row} />
+          ) : null}
           {row.kind === "thinking" ? <ThinkingTimelineRow row={row} /> : null}
         </WorkLogBlock>
       ) : null}
@@ -1650,11 +1717,11 @@ function WorkHistorySkeleton() {
 function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-fold" }> }) {
   const ctx = use(TimelineRowCtx);
   const { loading, error, toggle } = useDeferredWorkLoading(row, () =>
-    ctx.onToggleTurnFold(row.runId),
+    ctx.onToggleTurnFold(row.runId, row.active),
   );
 
   return (
-    <div className="group/timeline-row border-b border-border/60 pb-2 pe-0.5 pt-1">
+    <div className="group/timeline-row pb-1 pe-0.5 pt-1">
       <div className="relative flex items-center gap-1">
         <button
           type="button"
@@ -1664,8 +1731,14 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           aria-busy={loading}
           className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
         >
-          <span>
+          <span
+            ref={row.label === "Working…" ? observeVisibleAnimation : undefined}
+            className="relative overflow-hidden"
+          >
             {row.label}
+            {row.label === "Working…" ? (
+              <ActivityShimmerOverlay>{row.label}</ActivityShimmerOverlay>
+            ) : null}
             {error ? ` · ${error}` : ""}
           </span>
           <MorphIcon className="size-3.5" icon={row.expanded ? ChevronDown : ChevronRight} />

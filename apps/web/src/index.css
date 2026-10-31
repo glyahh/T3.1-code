@@ -631,7 +631,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     transparent 100%
   );
   mask-repeat: no-repeat;
-  animation: live-activity-focus 2.2s steps(30) infinite;
+  animation: live-activity-focus var(--agent-sweep-duration, 2.2s) steps(30) infinite;
   animation-play-state: var(--visible-animation-state, paused);
   will-change: var(--visible-animation-will-change, auto);
 
@@ -644,7 +644,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
 @utility live-activity-focus-counter {
   width: 100%;
-  animation: live-activity-focus-counter 2.2s steps(30) infinite;
+  animation: live-activity-focus-counter var(--agent-sweep-duration, 2.2s) steps(30) infinite;
   animation-play-state: var(--visible-animation-state, paused);
   will-change: var(--visible-animation-will-change, auto);
 
@@ -2208,7 +2208,7 @@ code {
   .chat-markdown[data-streaming] > *,
   .chat-markdown[data-streaming] .chat-markdown-shiki,
   .chat-markdown[data-streaming] .chat-markdown-mermaid {
-    transition: opacity 600ms ease-out;
+    transition: opacity var(--agent-insert-duration, 600ms) ease-out;
 
     @starting-style {
       opacity: 0;
@@ -2567,4 +2567,38 @@ code {
 [data-workspace-area]:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
+}
+
+/* Initial estimates from the accepted prototype; calibrate against the reference footage. */
+[data-timeline-row-id] {
+  --agent-state-duration: 220ms;
+  --agent-insert-duration: 240ms;
+  --agent-fold-ms: 240;
+  --agent-fold-duration: 240ms;
+  --agent-sweep-duration: 2100ms;
+  --agent-motion-ease: cubic-bezier(0.22, 0.7, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-timeline-row-id] .agent-status-label {
+    transition: opacity var(--agent-state-duration) var(--agent-motion-ease);
+    @starting-style {
+      opacity: 0;
+    }
+  }
+}
+[data-timeline-row-id][data-agent-motion="original"] {
+  --agent-state-duration: 0ms;
+  --agent-insert-duration: 600ms;
+  --agent-sweep-duration: 2200ms;
+}
+
+[data-timeline-row-id] [data-agent-details] {
+  transition-duration: var(--agent-fold-duration);
+  transition-timing-function: var(--agent-motion-ease);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-timeline-row-id] [data-agent-details] {
+    transition-duration: 0ms;
+  }
 }
