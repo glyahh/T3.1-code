@@ -3363,16 +3363,25 @@ describe("AcpAdapterV2", () => {
         Stream.takeUntil((event) => event.type === "turn.terminal"),
         Stream.runDrain,
       );
+      const unsafeOriginal = {
+        ...original,
+        nativeMetadata: { ...original.nativeMetadata, resumeRequiresRebuild: true },
+      };
+      const rejected = yield* runtime
+        .resumeThread({ providerThread: unsafeOriginal })
+        .pipe(Effect.result);
+      assert.equal(rejected._tag, "Failure");
       const replacement = yield* runtime.ensureThread({
         threadId,
         modelSelection,
         runtimePolicy,
-        existingProviderThread: { ...original, nativeThreadRef: null },
+        existingProviderThread: { ...unsafeOriginal, nativeThreadRef: null },
         forceNewNativeThread: true,
       });
       assert.notEqual(replacement.nativeThreadRef?.nativeId, original.nativeThreadRef?.nativeId);
       assert.equal(replacement.id, original.id);
       assert.equal(replacement.nativeMetadata?.itemIdentityVersion, 2);
+      assert.isUndefined(replacement.nativeMetadata?.resumeRequiresRebuild);
       yield* runtime.startTurn(
         makeTurnInput({
           threadId,
@@ -6820,6 +6829,7 @@ describe("AcpAdapterV2", () => {
         flavor: {
           driver: ACP_TEST_DRIVER,
           capabilities: AcpProviderCapabilitiesV2,
+          rebuildAfterUnconfirmedTermination: true,
           restartRuntimeAfterInterrupt: true,
           restartRuntimeOnEveryInterrupt: true,
           terminateRuntimeProcessGroupOnInterrupt: true,
@@ -6877,6 +6887,17 @@ describe("AcpAdapterV2", () => {
         assert.fail("mid-prompt steering interrupt must still take the hard teardown path");
       }
       assert.include(Cause.pretty(interruptExit.cause), "session is poisoned");
+      const stoppedEvents = yield* runtime.events.pipe(
+        Stream.takeUntil((event) => event.type === "turn.terminal"),
+        Stream.runCollect,
+      );
+      assert.isTrue(
+        stoppedEvents.some(
+          (event) =>
+            event.type === "provider_thread.updated" &&
+            event.providerThread.nativeMetadata?.resumeRequiresRebuild === true,
+        ),
+      );
     }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 

@@ -1,4 +1,8 @@
-import { captureExecutionRows, settleExecutionRows } from "./agentExecutionMotion";
+import {
+  ExecutionMotionBoundary,
+  captureExecutionRows,
+  settleExecutionRows,
+} from "./agentExecutionMotion";
 import { useUiStateStore } from "~/uiStateStore";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -33,7 +37,7 @@ const EMPTY_RESPONDING_REQUEST_IDS: TimelineRowSharedState["respondingRequestIds
 
 const NOOP_OPEN_ATTACHMENT = (_attachment: ChatFileAttachment) => {};
 
-import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
+import { useTimelinePromptAnchor } from "./useTimelinePromptAnchor";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import {
   memo,
@@ -67,7 +71,6 @@ import { MorphIcon } from "~/components/MorphIcon";
 import { Skeleton } from "../ui/skeleton";
 import { ExpandedImagePreview } from "./ExpandedImagePreview";
 import {
-  CHAT_TIMELINE_ANCHOR_OFFSET,
   readTimelinePosition,
   type RememberedTimelinePosition,
   rememberTimelinePosition,
@@ -114,7 +117,6 @@ import { TimelineRowTimestamp, ActivityShimmerOverlay } from "./TimelineRowParts
 import {
   WorkGroupSection,
   WorkingTimelineRow,
-  ThinkingTimelineRow,
   WorkGroupTimelineRow,
 } from "./TimelineWorkGroupRows";
 import { UserMessageRow } from "./TimelineUserMessageRow";
@@ -294,7 +296,12 @@ interface MessagesTimelineProps {
   skills?: ReadonlyArray<ServerProviderSkill>;
   runs: ReadonlyArray<HandoffTimelineRun>;
   anchorMessageId: MessageId | null;
-  onAnchorReady: (messageId: MessageId, anchorIndex: number) => void;
+  onAnchorReady: (
+    messageId: MessageId,
+    anchorIndex: number,
+    offset: number,
+    hasSpace: boolean,
+  ) => void;
   onAnchorSizeChanged: (messageId: MessageId, size: number) => void;
   contentInsetEndAdjustment: number;
   onIsAtEndChange: (isAtEnd: boolean) => void;
@@ -438,8 +445,12 @@ const ConversationTimeline = memo(function ConversationTimeline({
   }));
   const [expandedRunIds, setExpandedRunIds] = useState<ReadonlySet<RunId>>(
     () =>
-      listState.rememberedPosition?.disclosures?.runs ??
-      new Set(restoredDisclosures("run:").map((id) => id as RunId)),
+      new Set(
+        [
+          ...(listState.rememberedPosition?.disclosures?.runs ??
+            new Set(restoredDisclosures("run:").map((id) => id as RunId))),
+        ].filter((id) => id === runningRunId || savedDisclosures?.[`run:${id}`] !== false),
+      ),
   );
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(
     () =>
@@ -481,9 +492,12 @@ const ConversationTimeline = memo(function ConversationTimeline({
     // A viewer pinned in another thread must not keep live follow off here,
     // nor when that thread comes back.
     setFullscreenAppRowId(null);
-    paintedExpandedRunIds =
-      rememberedPosition?.disclosures?.runs ??
-      new Set(restoredDisclosures("run:").map((id) => id as RunId));
+    paintedExpandedRunIds = new Set(
+      [
+        ...(rememberedPosition?.disclosures?.runs ??
+          new Set(restoredDisclosures("run:").map((id) => id as RunId))),
+      ].filter((id) => id === runningRunId || savedDisclosures?.[`run:${id}`] !== false),
+    );
     paintedExpandedWorkGroupIds =
       rememberedPosition?.disclosures?.workGroups ?? new Set(restoredDisclosures("group:"));
     paintedExpandedAttemptIds = rememberedPosition?.disclosures?.attempts ?? new Set();
@@ -555,7 +569,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     if (expanded) next.add(runId);
     else next.delete(runId);
     setExpandedRunIds(next);
-    persistDisclosure(`run:${runId}`, expanded);
+    persistDisclosure(`run:${runId}`, running ? false : expanded);
   };
   const onToggleWorkGroup = (groupId: string, anchorKey: string) => {
     suspendEndScrollMaintenanceForDisclosure(anchorKey);
@@ -569,7 +583,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     const runId = entry?.kind === "work" ? entry.entry.runId : null;
     if (runId) {
       setExpandedRunIds((existing) => new Set(existing).add(runId));
-      persistDisclosure(`run:${runId}`, true);
+      persistDisclosure(`run:${runId}`, !(latestRun?.runId === runId && isWorking));
     }
   };
   const onToggleAttemptFold = (attemptId: RunAttemptId) => {
@@ -585,7 +599,12 @@ const ConversationTimeline = memo(function ConversationTimeline({
     });
   };
 
-  // Stop opens untouched work; explicit disclosure choices survive subsequent turns.
+  const [completedDisclosureReset, setCompletedDisclosureReset] = useState<{
+    identity: string;
+    runId: RunId;
+    groups: Set<string>;
+  } | null>(null);
+  // Stop keeps its process visible; successful completion resets live disclosures.
   const [observedLatestRun, setObservedLatestRun] = useState({
     identity: listIdentityKey,
     runId: latestRun?.runId,
@@ -609,15 +628,50 @@ const ConversationTimeline = memo(function ConversationTimeline({
     ) {
       if (latestRun.runId === previousRunId) {
         if (
-          observedLatestRun.status === "running" &&
-          latestRun.status === "interrupted" &&
-          savedDisclosures?.[`run:${latestRun.runId}`] === undefined
+          latestRun.status === "completed" ||
+          latestRun.status === "failed" ||
+          latestRun.status === "interrupted"
         ) {
-          setExpandedRunIds((existing) => new Set(existing).add(latestRun.runId));
+          const groups = new Set(
+            timelineEntries.flatMap((entry) =>
+              entry.kind === "work" && entry.entry.runId === latestRun.runId
+                ? [`work-group:${entry.id}`]
+                : [],
+            ),
+          );
+          setCompletedDisclosureReset({
+            identity: listIdentityKey,
+            runId: latestRun.runId,
+            groups,
+          });
+          paintedExpandedRunIds = new Set(
+            [...paintedExpandedRunIds].filter((id) => id !== latestRun.runId),
+          );
+          paintedExpandedWorkGroupIds = new Set(
+            [...paintedExpandedWorkGroupIds].filter((id) => !groups.has(id)),
+          );
+          setExpandedRunIds(paintedExpandedRunIds);
+          setExpandedWorkGroupIds(paintedExpandedWorkGroupIds);
         }
       }
     }
   }
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- persists the disclosure reset when the provider finishes
+  useLayoutEffect(() => {
+    if (completedDisclosureReset === null) return;
+    useUiStateStore.setState((state) => {
+      const saved = { ...state.threadTimelineExpandedById?.[completedDisclosureReset.identity] };
+      saved[`run:${completedDisclosureReset.runId}`] = false;
+      for (const group of completedDisclosureReset.groups) delete saved[`group:${group}`];
+      return {
+        threadTimelineExpandedById: {
+          ...state.threadTimelineExpandedById,
+          [completedDisclosureReset.identity]: saved,
+        },
+      };
+    });
+  }, [completedDisclosureReset]);
 
   // Imported turns and post-steer work fold under synthetic keys, not the entries' run ids.
   const findFoldRunIds = findActive
@@ -732,27 +786,13 @@ const ConversationTimeline = memo(function ConversationTimeline({
     availableRevertTurnCounts,
     worktreeSetup,
   });
-  const rows = useStableRows(rawRows, listIdentityKey);
-  const completedMotionRef = useRef<{
-    identity: string;
-    working: boolean;
-    rows: ReturnType<typeof captureExecutionRows>;
-  } | null>(null);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures visible rows before completion so virtualized removal animates without changing list heights
-  useLayoutEffect(() => {
-    const previous = completedMotionRef.current;
-    if (previous?.identity === listIdentityKey && previous.working && !isWorking) {
-      settleExecutionRows(previous.rows);
-    }
-    completedMotionRef.current = {
-      identity: listIdentityKey,
-      working: isWorking,
-      rows:
-        isWorking && rows.some((row) => row.kind === "turn-fold")
-          ? captureExecutionRows(listRef.current?.getScrollableNode())
-          : [],
-    };
-  }, [rows, listIdentityKey, isWorking, listRef]);
+  const currentActivityIndex = rawRows.findLastIndex(
+    (row) => row.kind === "thinking" || row.kind === "work-live",
+  );
+  const activityRows = rawRows.map((row, index) =>
+    index === currentActivityIndex ? { ...row, id: "live-activity-row" } : row,
+  );
+  const rows = useStableRows(activityRows, listIdentityKey);
   const matchedApprovalRequestIds = new Set<string>();
   for (const row of pendingApprovalRequestIds.size > 0 ? rows : []) {
     const entries =
@@ -878,29 +918,47 @@ const ConversationTimeline = memo(function ConversationTimeline({
         };
   const [minimapHitStripWidth, setMinimapHitStripWidth] = useState(0);
   const [minimapCurrentIndex, setMinimapCurrentIndex] = useState<number | null>(null);
-  const handleAnchorReady = (info: { anchorIndex: number | undefined }) => {
-    if (anchorMessageId !== null && info.anchorIndex !== undefined) {
-      onAnchorReady(anchorMessageId, info.anchorIndex);
-    }
-  };
-  const handleAnchorSizeChanged = (size: number) => {
-    if (anchorMessageId !== null) {
-      onAnchorSizeChanged(anchorMessageId, size);
-    }
-  };
-  const anchoredEndSpaceConfig = resolveChatListAnchoredEndSpace(
+  const promptTopInsetRef = useRef<HTMLDivElement>(null);
+  const promptAnchor = useTimelinePromptAnchor(
+    listRef,
     rows,
     anchorMessageId,
-    (row) => (row.kind === "message" && row.message.role === "user" ? row.message.id : null),
-    { anchorOffset: CHAT_TIMELINE_ANCHOR_OFFSET },
+    contentInsetEndAdjustment,
+    promptTopInsetRef,
   );
-  const anchoredEndSpace = anchoredEndSpaceConfig
+  const handleAnchorReady = (info: { anchorIndex: number | undefined }) => {
+    if (anchorMessageId !== null && info.anchorIndex !== undefined) {
+      onAnchorReady(anchorMessageId, info.anchorIndex, promptAnchor.offset, promptAnchor.hasSpace);
+    }
+  };
+  const anchoredEndSpace = promptAnchor.config
     ? {
-        ...anchoredEndSpaceConfig,
+        ...promptAnchor.config,
         onReady: handleAnchorReady,
-        onSizeChanged: handleAnchorSizeChanged,
+        onSizeChanged: (size: number) => {
+          if (anchorMessageId !== null) onAnchorSizeChanged(anchorMessageId, size);
+        },
       }
     : undefined;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- repositions the measured anchor after viewport or prompt height changes
+  useLayoutEffect(() => {
+    const index = promptAnchor.config?.anchorIndex;
+    if (
+      anchorMessageId !== null &&
+      index !== undefined &&
+      listRef.current?.getState().sizeAtIndex(index) !== undefined
+    ) {
+      onAnchorReady(anchorMessageId, index, promptAnchor.offset, promptAnchor.hasSpace);
+    }
+  }, [
+    anchorMessageId,
+    promptAnchor.config?.anchorIndex,
+    promptAnchor.offset,
+    promptAnchor.hasSpace,
+    listRef,
+    onAnchorReady,
+  ]);
+
   const maintainVisibleContentPosition = {
     data: true,
     size: true,
@@ -1160,7 +1218,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   );
   const listHeaderLeadingContent =
     parentThreadLink === null ? (
-      topFadeEnabled ? (
+      anchorMessageId !== null ? null : topFadeEnabled ? (
         TIMELINE_LIST_FADE_HEADER
       ) : (
         TIMELINE_LIST_HEADER
@@ -1185,6 +1243,13 @@ const ConversationTimeline = memo(function ConversationTimeline({
     );
   const listHeader = (
     <>
+      {anchorMessageId !== null ? (
+        <div
+          ref={promptTopInsetRef}
+          aria-hidden
+          className={topFadeEnabled ? "h-[var(--workspace-titlebar-scroll-fade-height)]" : "h-0"}
+        />
+      ) : null}
       {parentThreadLink === null ? listHeaderLeadingContent : null}
       {historyControls ? <TimelineHistoryControl {...historyControls} /> : null}
       {parentThreadLink !== null ? listHeaderLeadingContent : null}
@@ -1377,52 +1442,58 @@ const ConversationTimeline = memo(function ConversationTimeline({
                 onCite={onCiteAssistantText}
               />
             ) : null}
-            <LegendList<MessagesTimelineRow>
-              ref={setTimelineList}
-              data={rows}
-              extraData={listExtraData}
-              keyExtractor={keyExtractor}
-              getItemType={getItemType}
-              renderItem={renderItem}
-              estimatedItemSize={90}
-              initialScrollAtEnd={
-                !findActive && citationRequest === null && rememberedPosition?.atEnd !== false
-              }
-              // Legend needs a data refresh to mount new pins without a scroll event.
-              dataVersion={`${readyCitationRequest?.key ?? listIdentityKey}:${alwaysRenderKeys.join(",")}`}
-              {...(alwaysRender ? { alwaysRender } : {})}
-              onLoad={handleListLoad}
-              {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
-              contentInsetEndAdjustment={anchoredEndSpace ? contentInsetEndAdjustment : 0}
-              maintainScrollAtEnd={
-                citationPositioning ||
-                (restoringThreadPosition && rememberedPosition?.atEnd === false) ||
-                anchoredEndSpace ||
-                !liveFollowEnabled ||
-                fullscreenAppRowId !== null ||
-                disclosureToggleSettling
-                  ? false
-                  : isWorking && !prefersReducedMotion && settlingListIdentity === null
-                    ? TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH
-                    : TIMELINE_MAINTAIN_SCROLL_AT_END
-              }
-              maintainVisibleContentPosition={
-                findActive ||
-                citationPositioning ||
-                (restoringThreadPosition && rememberedPosition?.atEnd === false)
-                  ? false
-                  : maintainVisibleContentPosition
-              }
-              maintainScrollAtEndThreshold={1}
-              onScroll={handleScroll}
-              onItemSizeChanged={handleItemSizeChanged}
-              className={cn(
-                "messages-timeline-scroll scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain [overflow-anchor:none]",
-                topFadeEnabled && "topbar-scroll-fade",
-              )}
-              ListHeaderComponent={listHeader}
-              ListFooterComponent={timelineListFooter}
-            />
+            <ExecutionMotionBoundary
+              identity={listIdentityKey}
+              working={isWorking}
+              listRef={listRef}
+            >
+              <LegendList<MessagesTimelineRow>
+                ref={setTimelineList}
+                data={rows}
+                extraData={listExtraData}
+                keyExtractor={keyExtractor}
+                getItemType={getItemType}
+                renderItem={renderItem}
+                estimatedItemSize={90}
+                initialScrollAtEnd={
+                  !findActive && citationRequest === null && rememberedPosition?.atEnd !== false
+                }
+                // Legend needs a data refresh to mount new pins without a scroll event.
+                dataVersion={`${readyCitationRequest?.key ?? listIdentityKey}:${alwaysRenderKeys.join(",")}`}
+                {...(alwaysRender ? { alwaysRender } : {})}
+                onLoad={handleListLoad}
+                {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
+                contentInsetEndAdjustment={anchoredEndSpace ? contentInsetEndAdjustment : 0}
+                maintainScrollAtEnd={
+                  citationPositioning ||
+                  (restoringThreadPosition && rememberedPosition?.atEnd === false) ||
+                  (anchoredEndSpace && promptAnchor.hasSpace) ||
+                  !liveFollowEnabled ||
+                  fullscreenAppRowId !== null ||
+                  disclosureToggleSettling
+                    ? false
+                    : isWorking && !prefersReducedMotion && settlingListIdentity === null
+                      ? TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH
+                      : TIMELINE_MAINTAIN_SCROLL_AT_END
+                }
+                maintainVisibleContentPosition={
+                  findActive ||
+                  citationPositioning ||
+                  (restoringThreadPosition && rememberedPosition?.atEnd === false)
+                    ? false
+                    : maintainVisibleContentPosition
+                }
+                maintainScrollAtEndThreshold={1}
+                onScroll={handleScroll}
+                onItemSizeChanged={handleItemSizeChanged}
+                className={cn(
+                  "messages-timeline-scroll scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain [overflow-anchor:none]",
+                  topFadeEnabled && "topbar-scroll-fade",
+                )}
+                ListHeaderComponent={listHeader}
+                ListFooterComponent={timelineListFooter}
+              />
+            </ExecutionMotionBoundary>
             <TimelineMinimap
               items={minimapItems}
               hasPersistentGutter={minimapHasPersistentGutter}
@@ -1488,6 +1559,7 @@ function keyExtractor(item: MessagesTimelineRow) {
 
 // LegendList averages by type; length buckets prevent inflated estimates and nested-update loops.
 function getItemType(item: MessagesTimelineRow) {
+  if (item.kind === "thinking" || item.kind === "work-live") return "live-activity";
   if (item.kind !== "message") return item.kind;
   const lengthBucket = Math.max(0, Math.floor(Math.log2(item.message.text.length / 1000)));
   return `message:${item.message.role}:${lengthBucket}`;
@@ -1561,10 +1633,9 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
               displayLabel={row.displayLabel}
             />
           ) : null}
-          {row.kind === "work-live" || row.kind === "work-toggle" ? (
+          {row.kind === "work-live" || row.kind === "work-toggle" || row.kind === "thinking" ? (
             <WorkGroupTimelineRow row={row} />
           ) : null}
-          {row.kind === "thinking" ? <ThinkingTimelineRow row={row} /> : null}
         </WorkLogBlock>
       ) : null}
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow key={row.id} row={row} /> : null}
@@ -1729,7 +1800,7 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           data-scroll-anchor-ignore
           onClick={toggle}
           aria-busy={loading}
-          className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+          className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-agent-activity tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
         >
           <span
             ref={row.label === "Working…" ? observeVisibleAnimation : undefined}

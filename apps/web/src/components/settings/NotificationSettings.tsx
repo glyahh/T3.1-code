@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { useState } from "react";
 
@@ -13,6 +14,8 @@ import { searchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 
 export function NotificationSettings() {
+  const settingsText = useSettingsText();
+
   const mode = useScopedSettings((settings) => settings.notificationMode);
   const updateSettings = useUpdateScopedSettings();
   const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
@@ -21,10 +24,10 @@ export function NotificationSettings() {
   return (
     <SettingsRow
       {...searchableSetting("thread-notifications")}
-      description={
+      description={settingsText(
         permissionMessage ??
-        "System alerts when a thread finishes, fails, or needs input or approval. Applies to this device while T3 Code is open."
-      }
+          "System alerts when a thread finishes, fails, or needs input or approval. Applies to this device while T3 Code is open.",
+      )}
       control={
         <Select
           value={mode}
@@ -65,13 +68,17 @@ export function NotificationSettings() {
             updateSettings({ notificationMode: value });
           }}
         >
-          <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Thread notifications">
-            <SelectValue>{NOTIFICATION_MODE_LABELS[mode]}</SelectValue>
+          <SelectTrigger
+            size="sm"
+            className="w-full sm:w-56"
+            aria-label={settingsText("Thread notifications")}
+          >
+            <SelectValue>{settingsText(NOTIFICATION_MODE_LABELS[mode])}</SelectValue>
           </SelectTrigger>
           <SelectPopup align="end" alignItemWithTrigger={false}>
             {Object.entries(NOTIFICATION_MODE_LABELS).map(([value, label]) => (
               <SelectItem key={value} hideIndicator value={value}>
-                {label}
+                {settingsText(label)}
               </SelectItem>
             ))}
           </SelectPopup>

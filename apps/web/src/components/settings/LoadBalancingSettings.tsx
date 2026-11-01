@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
 
 import {
@@ -49,6 +50,8 @@ export function LoadBalancingSettings({
 }: {
   environments: ReadonlyArray<EnvironmentPresentation>;
 }) {
+  const settingsText = useSettingsText();
+
   const settings = useClientSettings((current) => ({
     loadBalancingEnabled: current.loadBalancingEnabled,
     loadBalancingWeights: current.loadBalancingWeights,
@@ -61,7 +64,7 @@ export function LoadBalancingSettings({
   return (
     <FoldedSettingsSection
       id={id}
-      title={title}
+      title={settingsText(title)}
       summary={
         settings.loadBalancingEnabled
           ? summarizeLoadPreferences(environments, settings.loadBalancingWeights)
@@ -69,7 +72,7 @@ export function LoadBalancingSettings({
       }
       control={
         <Switch
-          aria-label="Automatically balance load"
+          aria-label={settingsText("Automatically balance load")}
           checked={settings.loadBalancingEnabled}
           disabled={!settingsHydrated}
           onCheckedChange={(loadBalancingEnabled) => updateClientSettings({ loadBalancingEnabled })}
@@ -77,14 +80,15 @@ export function LoadBalancingSettings({
       }
     >
       <p className="px-3 py-2.5 text-xs text-muted-foreground sm:px-4">
-        New threads in shared projects start on the machine with the most free CPU and memory,
-        weighted by each machine's preference.
+        {settingsText(
+          "New threads in shared projects start on the machine with the most free CPU and memory, weighted by each machine's preference.",
+        )}
       </p>
       {environments.map((environment) => (
         <EnvironmentRow
           key={environment.environmentId}
           kind={resolveEnvironmentMachineKind(environment.serverConfig)}
-          label={environment.label}
+          label={settingsText(environment.label)}
           subtitle={<EnvironmentTransportLabel environment={environment} />}
         >
           <Select
@@ -106,14 +110,14 @@ export function LoadBalancingSettings({
             <SelectTrigger
               size="xs"
               className="w-32"
-              aria-label={`${environment.label} load preference`}
+              aria-label={settingsText("{0} load preference", environment.label)}
             >
               <SelectValue />
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
               {preferences.map(({ value, label }) => (
                 <SelectItem key={value} value={value}>
-                  {label}
+                  {settingsText(label)}
                 </SelectItem>
               ))}
             </SelectPopup>

@@ -1112,7 +1112,7 @@ function deriveTurnFolds(input: {
     if (
       (input.unfoldedRunIds.has(runId) && !live) ||
       (interruptedRunIds.has(runId) && input.liveRunIds === undefined) ||
-      runlessFailedKeys.has(runId) ||
+      (runlessFailedKeys.has(runId) && input.liveRunIds === undefined) ||
       (input.runlessWorkActive && runId === runlessKey)
     ) {
       continue;
@@ -1132,7 +1132,7 @@ function deriveTurnFolds(input: {
       const isFoldableTrailingActivity =
         entry.kind === "work" &&
         entry.entry.toolLifecycleStatus !== "inProgress" &&
-        !workEntryDisplayIndicatesToolFailure(entry.entry);
+        (input.liveRunIds !== undefined || !workEntryDisplayIndicatesToolFailure(entry.entry));
       if (!live && !isCompaction && index > terminalEntryIndex && !isFoldableTrailingActivity) {
         continue;
       }
@@ -1146,16 +1146,21 @@ function deriveTurnFolds(input: {
       }
       if (
         entry.kind === "work" &&
-        (entry.entry.itemType === "notification" ||
+        ((entry.entry.itemType === "notification" && input.liveRunIds === undefined) ||
           (input.liveRunIds !== undefined &&
+            live &&
             (entry.entry.itemType === "approval_request" ||
-              entry.entry.itemType === "user_input_request" ||
-              entry.entry.itemType === "error" ||
-              entry.entry.tone === "error" ||
-              workEntryDisplayIndicatesToolFailure(entry.entry))))
+              entry.entry.itemType === "user_input_request") &&
+            (entry.entry.projectedItem?.item.status === "pending" ||
+              entry.entry.projectedItem?.item.status === "running")))
       )
         continue;
-      if (entry.kind === "work" && entry.entry.questionAnswer !== undefined) continue;
+      if (
+        entry.kind === "work" &&
+        entry.entry.questionAnswer !== undefined &&
+        input.liveRunIds === undefined
+      )
+        continue;
       hiddenEntryIds.add(entry.id);
     }
     if (hiddenEntryIds.size === 0) {
@@ -1406,7 +1411,11 @@ function deriveTimelineTurnFolds(
     timelineEntries,
     terminalAssistantMessageIds: deriveTerminalAssistantMessageIds(timelineEntries),
     latestRun: input.latestRun ?? null,
-    unfoldedRunIds: new Set([...activeVisualResponseRunIds, ...failedRunIds]),
+    unfoldedRunIds: new Set(
+      input.collapsedLiveRunIds === undefined
+        ? [...activeVisualResponseRunIds, ...failedRunIds]
+        : activeVisualResponseRunIds,
+    ),
     runlessWorkActive: input.isWorking && input.runlessWorkActive === true,
     liveSubagentEntryIds: liveSubagentCardEntryIds(timelineEntries),
     completeSupersededReplyEntryIds: completeSupersededReplyEntryIds(timelineEntries),
@@ -1434,6 +1443,44 @@ export function deriveMessagesTimelineRows(input: {
   worktreeSetup?: WorktreeSetupSnapshot | null;
 }): MessagesTimelineRow[] {
   const timelineEntries = timelineRowEntries(input.timelineEntries);
+  const closedPhaseEntries = new Set<WorkLogEntry>();
+  const bodyPhases = new Set<string>();
+  for (
+    let index = timelineEntries.length - 1;
+    index >= 0 && input.collapsedLiveRunIds !== undefined;
+    index -= 1
+  ) {
+    const entry = timelineEntries[index]!;
+    if (timelineEntryStartsResponse(entry)) bodyPhases.clear();
+    const key = `${timelineEntryRunId(entry) ?? "runless"}:${entry.attempt?.id ?? ""}`;
+    if (
+      entry.kind === "message" &&
+      entry.message.role === "assistant" &&
+      entry.message.text.trim()
+    ) {
+      bodyPhases.add(key);
+    } else if (entry.kind === "work" && bodyPhases.has(key)) {
+      closedPhaseEntries.add(entry.entry);
+    }
+  }
+  const lastContentEntry = timelineEntries.findLast(
+    (entry) => entry.kind === "message" || entry.kind === "work",
+  );
+  const lastProgressAt =
+    input.collapsedLiveRunIds === undefined
+      ? (input.activeTurnStartedAt ?? null)
+      : lastContentEntry?.kind === "message"
+        ? lastContentEntry.message.updatedAt
+        : lastContentEntry?.kind === "work"
+          ? lastContentEntry.entry.projectedItem
+            ? DateTime.formatIso(lastContentEntry.entry.projectedItem.item.updatedAt)
+            : lastContentEntry.createdAt
+          : (input.activeTurnStartedAt ?? null);
+  const bodyOwnsActivity =
+    lastContentEntry?.kind === "message" &&
+    lastContentEntry.message.role === "assistant" &&
+    lastContentEntry.message.streaming &&
+    Boolean(lastContentEntry.message.text.trim());
   const isPendingApproval = (entry: WorkLogEntry) => {
     const item = entry.projectedItem?.item;
     return (
@@ -1530,6 +1577,7 @@ export function deriveMessagesTimelineRows(input: {
   const workEntryIsInActiveRun = (entry: WorkLogEntry) =>
     input.isWorking &&
     entry.toolLifecycleStatus === "inProgress" &&
+    !closedPhaseEntries.has(entry) &&
     (entry.runId == null ? runlessWorkActive : entry.runId === unsettledRunId);
 
   const activeTurnHeaderIndex = input.isWorking
@@ -1541,6 +1589,13 @@ export function deriveMessagesTimelineRows(input: {
     let tailAttemptId: string | null | undefined;
     for (let index = timelineEntries.length - 1; index >= activeTurnHeaderIndex; index -= 1) {
       const entry = timelineEntries[index]!;
+      if (
+        entry.kind === "message" &&
+        entry.message.role === "assistant" &&
+        input.collapsedLiveRunIds !== undefined &&
+        !entry.message.text.trim()
+      )
+        continue;
       if (
         entry.kind !== "work" ||
         entry.entry.tone === "error" ||
@@ -1578,7 +1633,8 @@ export function deriveMessagesTimelineRows(input: {
   );
   const latestToolKeepsActivityLive =
     latestRunningToolEntry !== undefined ||
-    (latestVisibleToolEntry !== undefined &&
+    (input.collapsedLiveRunIds === undefined &&
+      latestVisibleToolEntry !== undefined &&
       workEntryIndicatesToolSuccess(latestVisibleToolEntry.entry) &&
       !input.pendingApprovalRequestIds?.size);
   const latestToolFailed =
@@ -1707,7 +1763,7 @@ export function deriveMessagesTimelineRows(input: {
   const appendActiveWorkRows = () => {
     if (activeWorkRow === null) return;
     nextRows.push(activeWorkRow);
-    hasActivityRow ||= activeWorkRow.active;
+    hasActivityRow ||= input.collapsedLiveRunIds !== undefined || activeWorkRow.active;
     if (!activeWorkRow.expanded) return;
     nextRows.push(
       expandedWorkGroupRow(
@@ -1893,7 +1949,10 @@ export function deriveMessagesTimelineRows(input: {
         cursor += 1;
       }
       const visibleGroupedEntries = groupedEntries.filter((entry) =>
-        workEntryIsVisibleInGroup(entry, workEntryIsInActiveRun(entry)),
+        workEntryIsVisibleInGroup(
+          entry,
+          closedPhaseEntries.has(entry) || workEntryIsInActiveRun(entry),
+        ),
       );
       if (visibleGroupedEntries.length > 0) {
         const activeInProgressToolEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
@@ -2160,6 +2219,7 @@ export function deriveMessagesTimelineRows(input: {
     input.latestRun?.turnEnded !== true &&
     !(unsettledRunId !== null && input.collapsedLiveRunIds?.has(unsettledRunId)) &&
     !setupOwnsWorkingSlot &&
+    !(input.collapsedLiveRunIds !== undefined && bodyOwnsActivity) &&
     !hasActiveCompaction &&
     !compactionOnlyRunFinished &&
     (latestToolFailed || (!hasActivityRow && !input.pendingApprovalRequestIds?.size))
@@ -2171,7 +2231,7 @@ export function deriveMessagesTimelineRows(input: {
       nextRows.push({
         kind: "thinking",
         id: LIVE_ACTIVITY_ROW_ID,
-        createdAt: input.activeTurnStartedAt ?? null,
+        createdAt: lastProgressAt,
         groupId,
         expanded,
       });
@@ -2188,7 +2248,7 @@ export function deriveMessagesTimelineRows(input: {
       nextRows.push({
         kind: "thinking",
         id: LIVE_ACTIVITY_ROW_ID,
-        createdAt: input.activeTurnStartedAt ?? null,
+        createdAt: lastProgressAt,
       });
     }
   }
@@ -2399,6 +2459,11 @@ function replaceStreamingMessageRows(
     )
       continue;
     if (!isStreamingMessageTextUpdate(previousEntry.message, entry.message)) return null;
+    if (
+      input.collapsedLiveRunIds !== undefined &&
+      Boolean(previousEntry.message.text.trim()) !== Boolean(entry.message.text.trim())
+    )
+      return null;
     replacements.set(previousEntry.message, entry);
   }
   if (replacements.size === 0) return previous.rows;

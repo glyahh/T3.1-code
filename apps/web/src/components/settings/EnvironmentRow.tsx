@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import {
   type ConnectionTarget,
   connectionRouteId,
@@ -84,6 +85,8 @@ export function EnvironmentRow({
   readonly className?: string;
   readonly children?: ReactNode;
 }) {
+  const settingsText = useSettingsText();
+
   return (
     <div
       className={cn(
@@ -98,8 +101,8 @@ export function EnvironmentRow({
         className={cn("size-4 text-muted-foreground", dimmed && "opacity-60")}
       />
       <div className={cn("min-w-0", dimmed && "opacity-60")}>
-        <p className="truncate text-sm font-medium text-foreground">{label}</p>
-        <div className="truncate text-xs text-muted-foreground">{subtitle}</div>
+        <p className="truncate text-sm font-medium text-foreground">{settingsText(label)}</p>
+        <div className="truncate text-xs text-muted-foreground">{settingsText(subtitle)}</div>
         {below}
       </div>
       <div className="flex shrink-0 items-center gap-1">{children}</div>

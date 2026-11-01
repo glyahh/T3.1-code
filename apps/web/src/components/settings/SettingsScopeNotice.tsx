@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import { resolveEnvironmentMachineKind, type EnvironmentId } from "@t3tools/contracts";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon, LayersIcon } from "lucide-react";
@@ -41,6 +42,8 @@ export function SettingsScopeNotice({
   targetId?: string;
   eligibleEnvironmentIds?: readonly EnvironmentId[];
 }) {
+  const settingsText = useSettingsText();
+
   const { selectScope, search, groups } = useSettingsScope();
   const navigate = useNavigate({ from: "/settings" });
   const pathname = useLocation({ select: (location) => location.pathname });
@@ -135,7 +138,7 @@ export function SettingsScopeNotice({
       >
         {choice.icon}
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">{choice.label}</span>
+          <span className="block truncate text-sm font-medium">{settingsText(choice.label)}</span>
           {choice.secondary ? (
             <Tooltip>
               <TooltipTrigger
@@ -159,7 +162,7 @@ export function SettingsScopeNotice({
       <div className="space-y-4">
         {choiceGroups.map((group) =>
           group?.displayName ? (
-            <SettingsSection key={group.projectKey} title={group.displayName}>
+            <SettingsSection key={group.projectKey} title={settingsText(group.displayName)}>
               {renderChoices(group)}
             </SettingsSection>
           ) : (

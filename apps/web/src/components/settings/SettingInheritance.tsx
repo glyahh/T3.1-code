@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import {
   DEFAULT_SERVER_SETTINGS,
   PROJECT_FILE_BACKED_SETTINGS,
@@ -184,6 +185,8 @@ export function SettingInheritance({
   overridingProjects?: readonly SettingOverridingProject[];
   onClearOverrides?: (entries: readonly ProjectOverrideEntry[]) => void;
 }) {
+  const settingsText = useSettingsText();
+
   const scopeContext = useOptionalSettingsScope();
   const key = keys[0];
   if (!key || targets.length === 0) return null;
@@ -252,7 +255,10 @@ export function SettingInheritance({
                 <Button
                   size="icon-micro"
                   variant="ghost-muted"
-                  aria-label={`${overrideSummary}. Show where this value comes from`}
+                  aria-label={settingsText(
+                    "{0}. Show where this value comes from",
+                    overrideSummary,
+                  )}
                 />
               }
             />
@@ -290,7 +296,7 @@ export function SettingInheritance({
                         layer.effective ? "font-medium text-foreground" : "text-muted-foreground",
                       )}
                     >
-                      {layer.key === "environment" ? "Environment" : layer.label}
+                      {settingsText(layer.key === "environment" ? "Environment" : layer.label)}
                     </span>
                     <span
                       className={cn(
@@ -322,7 +328,7 @@ export function SettingInheritance({
                       kind={machine}
                       className="size-3.5 shrink-0"
                     />
-                    <span className="min-w-0 truncate">{target.label}</span>
+                    <span className="min-w-0 truncate">{settingsText(target.label)}</span>
                   </h4>
                 ) : null}
                 {hasMultipleEnvironments && groups.length > 1 ? (
@@ -342,9 +348,11 @@ export function SettingInheritance({
                             {winningLayer?.value}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {winningLayer?.key === "environment"
-                              ? "Environment"
-                              : winningLayer?.label}
+                            {settingsText(
+                              winningLayer?.key === "environment"
+                                ? "Environment"
+                                : winningLayer?.label,
+                            )}
                           </span>
                           <ChevronRightIcon
                             aria-hidden
@@ -362,7 +370,7 @@ export function SettingInheritance({
                                 kind={member.machine}
                                 className="size-3 shrink-0"
                               />
-                              <span className="truncate">{member.label}</span>
+                              <span className="truncate">{settingsText(member.label)}</span>
                             </span>
                           ))}
                         </span>
@@ -377,7 +385,7 @@ export function SettingInheritance({
                     {chain}
                     {hasMultipleEnvironments ? (
                       <p className="px-2 pt-1.5 text-xs text-muted-foreground">
-                        Same on all machines
+                        {settingsText("Same on all machines")}
                       </p>
                     ) : null}
                   </>
@@ -396,14 +404,15 @@ export function SettingInheritance({
                             aria-hidden
                             className="size-3 [[data-panel-open]_&]:rotate-90"
                           />
-                          Overridden by
+                          {settingsText("Overridden by")}
                         </CollapsibleTrigger>
                       ) : (
-                        <span>Overridden by</span>
+                        <span>{settingsText("Overridden by")}</span>
                       )}
                       {onClearOverrides ? (
                         <InlineButton onClick={() => onClearOverrides(overriding)}>
-                          Reset {overriding.length === 1 ? "it" : "all"}
+                          {settingsText("Reset ")}
+                          {overriding.length === 1 ? settingsText("it") : settingsText("all")}
                         </InlineButton>
                       ) : null}
                     </div>
@@ -423,11 +432,11 @@ export function SettingInheritance({
                               className="min-w-0 max-w-full justify-start"
                               onClick={project.open}
                             >
-                              <span className="truncate">{project.label}</span>
+                              <span className="truncate">{settingsText(project.label)}</span>
                             </InlineButton>
                             {hasMultipleEnvironments ? (
                               <span className="max-w-full truncate text-xs text-muted-foreground">
-                                {machineLabelFor(project.environmentId)}
+                                {settingsText(machineLabelFor(project.environmentId))}
                               </span>
                             ) : null}
                           </span>

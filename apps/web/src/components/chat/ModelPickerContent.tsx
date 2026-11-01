@@ -1,3 +1,4 @@
+import { useSettingsText } from "../settings/settingsText";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   type ProviderInstanceId,
@@ -205,6 +206,8 @@ function ModelPickerProviderNotices({
   onRequestClose: (() => void) | undefined;
   onOpenProviderSetup: ((instanceId: ProviderInstanceId) => void) | undefined;
 }) {
+  const settingsText = useSettingsText();
+
   const navigate = useNavigate();
   return (
     <>
@@ -222,27 +225,30 @@ function ModelPickerProviderNotices({
                   onOpenProviderSetup?.(entry.instanceId);
                 }}
               >
-                {setupEntries.length > 1 ? `Set up ${entry.displayName}` : "Open provider setup"}
+                {setupEntries.length > 1
+                  ? settingsText("Set up {0}", entry.displayName)
+                  : settingsText("Open provider setup")}
               </InlineButton>
             </div>
           ))}
         </div>
       ) : (
-        <ComboboxEmpty className="empty:h-0">{emptyLabel}</ComboboxEmpty>
+        <ComboboxEmpty className="empty:h-0">{settingsText(emptyLabel)}</ComboboxEmpty>
       )}
       {updateRequiredNotices.map(({ instanceId, notice }) => (
         <p
           key={instanceId}
           className="shrink-0 border-t border-border/70 px-3 py-2 text-xs leading-snug text-muted-foreground"
         >
-          {notice}{" "}
+          {notice}
+          {settingsText(" ")}
           <InlineButton
             onClick={() => {
               onRequestClose?.();
               void navigate({ to: "/settings/providers" });
             }}
           >
-            Provider settings
+            {settingsText("Provider settings")}
           </InlineButton>
         </p>
       ))}
@@ -367,6 +373,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   /** Right at the end of the search text moves into the popup's effort column. */
   onFocusEffort?: () => void;
 }) {
+  const settingsText = useSettingsText();
+
   const {
     searchInputRef,
     keybindings: providedKeybindings,
@@ -919,7 +927,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           >
             <ComboboxSearchInput
               ref={searchInputRef}
-              placeholder="Search models..."
+              placeholder={settingsText("Search models...")}
               value={searchQuery}
               onChange={(e) => {
                 if (!isSearching) setSearchHeight(pickerContentRef.current?.offsetHeight ?? 0);
@@ -1020,7 +1028,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                       className="group w-full cursor-pointer"
                     >
                       <span className="text-sm leading-snug text-muted-foreground group-hover:text-foreground group-data-highlighted:text-foreground">
-                        {legacySection.isExpanded ? "Show less" : "Show more"}
+                        {legacySection.isExpanded
+                          ? settingsText("Show less")
+                          : settingsText("Show more")}
                       </span>
                     </ComboboxItem>
                   );

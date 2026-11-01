@@ -1,3 +1,4 @@
+import { observeResize } from "~/lib/observeResize";
 import { type ReactNode } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
@@ -48,7 +49,25 @@ export function ActivityShimmerOverlay({ children }: { children: ReactNode }) {
       className="live-activity-focus pointer-events-none absolute inset-y-0 select-none"
     >
       <span className="live-activity-focus-counter block">
-        <span className="live-activity-focus-aligned block text-foreground">{children}</span>
+        <span
+          className="live-activity-focus-aligned block text-foreground"
+          ref={(element) => {
+            if (!element) return;
+            const overlay = element.closest<HTMLElement>(".live-activity-focus");
+            const label = overlay?.parentElement;
+            const measure = () => {
+              const width = Math.min(
+                element.scrollWidth,
+                label?.getBoundingClientRect().width ?? Infinity,
+              );
+              overlay?.style.setProperty("--agent-label-width", `${width}px`);
+            };
+            measure();
+            return observeResize(label ? [element, label] : element, measure);
+          }}
+        >
+          {children}
+        </span>
       </span>
     </span>
   );

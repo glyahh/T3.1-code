@@ -610,6 +610,11 @@ export const make = Effect.gen(function* () {
           occurredAt: now,
           payload: {
             ...providerThread,
+            ...(providerThread.driver === "antigravity" && needsIdle
+              ? {
+                  nativeMetadata: { ...providerThread.nativeMetadata, resumeRequiresRebuild: true },
+                }
+              : {}),
             status: needsIdle ? "idle" : providerThread.status,
             pendingBackgroundTasks: [],
             updatedAt: now,
@@ -650,7 +655,13 @@ export const make = Effect.gen(function* () {
         });
       }
       const continuationRun =
-        continueAfterRestart && trigger === "startup"
+        continueAfterRestart &&
+        trigger === "startup" &&
+        !projection.providerThreads.some(
+          (thread) =>
+            thread.driver === "antigravity" &&
+            (thread.status === "active" || thread.nativeMetadata?.resumeRequiresRebuild),
+        )
           ? restartContinuationRun(
               { ...projection, providerSessions: sessionsLiveAtStart(projection, stoppedThisPass) },
               now,

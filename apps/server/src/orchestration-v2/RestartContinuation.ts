@@ -145,6 +145,7 @@ export function restartContinuationRun(
   );
   if (
     !providerThread ||
+    providerThread.nativeMetadata?.resumeRequiresRebuild === true ||
     providerThread.appThreadId !== projection.thread.id ||
     providerThread.ownerNodeId !== null ||
     providerThread.providerInstanceId !== run.providerInstanceId ||

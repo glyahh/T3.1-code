@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -40,6 +41,8 @@ export function ProviderAuthenticationSection({
   readonly provider: ServerProvider;
   readonly readOnly: boolean;
 }) {
+  const settingsText = useSettingsText();
+
   const target = { environmentId, input: { instanceId } };
   const query = useEnvironmentQuery(serverEnvironment.providerAuthState(target));
   const commands = { reportFailure: false, reportDefect: false };
@@ -158,15 +161,16 @@ export function ProviderAuthenticationSection({
 
   return (
     <SettingsRow
-      title="Account"
+      title={settingsText("Account")}
       description={
         signedIn && !active && provider.auth.email?.trim() ? (
           <span>
-            Signed in as{" "}
+            {settingsText("Signed in as")}
+            {settingsText(" ")}
             <RedactedSensitiveText
               key={provider.auth.email}
               value={provider.auth.email}
-              ariaLabel="Toggle account email visibility"
+              ariaLabel={settingsText("Toggle account email visibility")}
               revealTooltip="Click to reveal email"
               hideTooltip="Click to hide email"
               className="max-w-full truncate"
@@ -191,14 +195,14 @@ export function ProviderAuthenticationSection({
               disabled={disabled}
               onValueChange={(value) => setMethodId(value ?? "")}
             >
-              <SelectTrigger size="sm" aria-label="Sign-in method" className="w-44">
+              <SelectTrigger size="sm" aria-label={settingsText("Sign-in method")} className="w-44">
                 <SelectValue>
                   {auth?.methods?.find((method) => method.id === methodId)?.name ??
-                    "Provider default"}
+                    settingsText("Provider default")}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup>
-                <SelectItem value="">Provider default</SelectItem>
+                <SelectItem value="">{settingsText("Provider default")}</SelectItem>
                 {auth?.methods?.map((method) => (
                   <SelectItem key={method.id} value={method.id}>
                     {method.name}
@@ -215,13 +219,13 @@ export function ProviderAuthenticationSection({
                 disabled={disabled}
                 onClick={() => void openBrowser()}
               >
-                Open browser
+                {settingsText("Open browser")}
               </Button>
               <Tooltip>
                 <TooltipTrigger
                   render={
                     <Button
-                      aria-label="Copy sign-in link"
+                      aria-label={settingsText("Copy sign-in link")}
                       size="icon-sm"
                       variant="ghost-muted"
                       disabled={disabled}
@@ -240,7 +244,7 @@ export function ProviderAuthenticationSection({
                     </Button>
                   }
                 />
-                <TooltipPopup>Copy sign-in link</TooltipPopup>
+                <TooltipPopup>{settingsText("Copy sign-in link")}</TooltipPopup>
               </Tooltip>
             </>
           ) : null}
@@ -253,13 +257,13 @@ export function ProviderAuthenticationSection({
                   <a href={provider.setup.documentationUrl} target="_blank" rel="noreferrer" />
                 }
               >
-                Open docs
+                {settingsText("Open docs")}
               </Button>
             ) : active && auth?.flowId ? (
               <Button
                 size="sm"
                 variant="ghost-muted"
-                aria-label="Cancel sign-in"
+                aria-label={settingsText("Cancel sign-in")}
                 disabled={disabled}
                 onClick={() =>
                   void run(() =>
@@ -267,7 +271,7 @@ export function ProviderAuthenticationSection({
                   )
                 }
               >
-                Cancel
+                {settingsText("Cancel")}
               </Button>
             ) : !active && !needsExternalSetup && provider.setup?.canAuthenticate !== false ? (
               <Button
@@ -289,10 +293,10 @@ export function ProviderAuthenticationSection({
                 }
               >
                 {signedIn
-                  ? "Change account"
+                  ? settingsText("Change account")
                   : auth?.phase === "failed" || auth?.phase === "cancelled"
-                    ? "Retry sign-in"
-                    : "Sign in"}
+                    ? settingsText("Retry sign-in")
+                    : settingsText("Sign in")}
               </Button>
             ) : null}
             {!active && signedIn && (provider.auth.canLogout ?? provider.setup?.canAuthenticate) ? (
@@ -310,7 +314,7 @@ export function ProviderAuthenticationSection({
                     });
                 }}
               >
-                Sign out
+                {settingsText("Sign out")}
               </Button>
             ) : null}
           </>
@@ -326,16 +330,20 @@ export function ProviderAuthenticationSection({
         <>
           {interaction?.type === "deviceCode" ? (
             <p className="py-2 text-sm text-muted-foreground">
-              Enter code{" "}
-              <code className="select-all font-mono text-foreground">{interaction.userCode}</code>{" "}
-              in your browser.
+              {settingsText("Enter code")}
+              {settingsText(" ")}
+              <code className="select-all font-mono text-foreground">{interaction.userCode}</code>
+              {settingsText(" ")}
+              {settingsText("in your browser.")}
             </p>
           ) : null}
           {interaction?.type === "terminal" ? (
             <div className="py-2">
               <Suspense
                 fallback={
-                  <p className="text-xs text-muted-foreground">Loading sign-in terminal…</p>
+                  <p className="text-xs text-muted-foreground">
+                    {settingsText("Loading sign-in terminal…")}
+                  </p>
                 }
               >
                 <ProviderAuthTerminal
@@ -397,7 +405,7 @@ export function ProviderAuthenticationSection({
             >
               {interaction.fields.map((field) => (
                 <label key={field.name} className="grid gap-1">
-                  {field.label}
+                  {settingsText(field.label)}
                   <Input
                     size="sm"
                     type={field.secret ? "password" : "text"}
@@ -416,7 +424,7 @@ export function ProviderAuthenticationSection({
                 className="w-fit"
                 disabled={disabled}
               >
-                Connect
+                {settingsText("Connect")}
               </Button>
             </form>
           ) : null}
@@ -437,7 +445,9 @@ export function ProviderAuthenticationSection({
               }}
             >
               <label className="grid gap-1">
-                If the final localhost page does not load, paste its full URL here.
+                {settingsText(
+                  "If the final localhost page does not load, paste its full URL here.",
+                )}
                 <Input
                   size="sm"
                   id={`provider-callback-${instanceId}`}
@@ -456,7 +466,7 @@ export function ProviderAuthenticationSection({
                 className="w-fit"
                 disabled={disabled || !values.callback?.trim()}
               >
-                Continue
+                {settingsText("Continue")}
               </Button>
             </form>
           ) : null}

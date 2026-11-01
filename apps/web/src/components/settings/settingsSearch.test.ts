@@ -340,3 +340,11 @@ describe("movedSettingsPath", () => {
     expect(movedSettingsPath("/settings/appearance", "theme")).toBeNull();
   });
 });
+
+it("uses translated search labels only when the settings caller requests them", () => {
+  const translate = <T>(text: T): T => (text === "Word wrap" ? "自动换行" : text) as T;
+  expect(searchSettings("自动换行", ITEMS)).toEqual([]);
+  const result = searchSettings("自动换行", ITEMS, translate);
+  expect(result.map((item) => item.id)).toEqual(["word-wrap"]);
+  expect(result[0]?.title).toBe("Word wrap");
+});

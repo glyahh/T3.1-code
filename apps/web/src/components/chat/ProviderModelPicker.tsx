@@ -1,3 +1,4 @@
+import { useSettingsText } from "../settings/settingsText";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   type ProviderInstanceId,
@@ -110,6 +111,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   effortColumn?: ReactNode;
   footer?: ReactNode;
 }) {
+  const settingsText = useSettingsText();
+
   const composerFloatingLayerProps = useComposerMenuProps();
   const [uncontrolledIsMenuOpen, setUncontrolledIsMenuOpen] = useState(false);
   const isMenuOpen = props.open ?? uncontrolledIsMenuOpen;
@@ -284,12 +287,14 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         render={
           <ComposerControl
             ref={triggerRef}
-            aria-label={[
-              props.triggerAriaLabel ?? props.triggerLabel ?? allModelNames ?? triggerLabel,
-              props.triggerDetail,
-            ]
-              .filter(Boolean)
-              .join(", ")}
+            aria-label={settingsText(
+              [
+                props.triggerAriaLabel ?? props.triggerLabel ?? allModelNames ?? triggerLabel,
+                props.triggerDetail,
+              ]
+                .filter(Boolean)
+                .join(", "),
+            )}
             size={size}
             data-chat-provider-model-picker="true"
             data-composer-shortcut={props.triggerShortcuts}
@@ -376,7 +381,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           {props.triggerSuffix}
           {selectedModel?.isUnavailable && !selectedEntries && props.triggerLabel === undefined ? (
             <Badge variant="outline" size="sm">
-              Unavailable
+              {settingsText("Unavailable")}
             </Badge>
           ) : null}
         </span>

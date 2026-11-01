@@ -1,3 +1,5 @@
+import { SettingsTextProvider } from "../components/settings/SettingsTextProvider";
+import { useSettingsText } from "../components/settings/settingsText";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
@@ -28,6 +30,8 @@ import {
 } from "../components/settings/settingsSearch";
 
 function RestoreDeviceDefaultsButton({ onRestored }: { onRestored: () => void }) {
+  const settingsText = useSettingsText();
+
   const { changedSettingLabels, restoreDefaults } = useSettingsRestore(onRestored);
   return (
     <Button
@@ -37,12 +41,14 @@ function RestoreDeviceDefaultsButton({ onRestored }: { onRestored: () => void })
       onClick={() => void restoreDefaults()}
     >
       <RotateCcwIcon className="mx-1 size-3.5" />
-      <span className="max-sm:sr-only">Restore device defaults</span>
+      <span className="max-sm:sr-only">{settingsText("Restore device defaults")}</span>
     </Button>
   );
 }
 
 function SettingsScopeBoundary({ pathname, children }: { pathname: string; children: ReactNode }) {
+  const settingsText = useSettingsText();
+
   const { scope, connectedEnvironments } = useSettingsScope();
   const { environments } = useEnvironments();
   const hash = useLocation({ select: (location) => location.hash });
@@ -62,9 +68,11 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
         targetId={hash}
         eligibleEnvironmentIds={autoSettlementAvailability.eligibleEnvironmentIds}
       >
-        {autoSettlementAvailability.eligibleEnvironmentIds.length > 0
-          ? `${searchTarget.title} requires a supporting environment. Choose one to continue.`
-          : `${searchTarget.title} requires a supporting environment. Connect or update an environment to continue.`}
+        {settingsText(
+          autoSettlementAvailability.eligibleEnvironmentIds.length > 0
+            ? `${searchTarget.title} requires a supporting environment. Choose one to continue.`
+            : `${searchTarget.title} requires a supporting environment. Connect or update an environment to continue.`,
+        )}
       </SettingsScopeNotice>
     );
   }
@@ -81,7 +89,10 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
         : "all";
     return (
       <SettingsScopeNotice target={target} targetId={hash}>
-        {`${searchTarget.title} is not available for the selected target. Choose its owning scope to continue.`}
+        {settingsText(
+          "{0} is not available for the selected target. Choose its owning scope to continue.",
+          searchTarget.title,
+        )}
       </SettingsScopeNotice>
     );
   }
@@ -91,14 +102,16 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
   if (scope.kind === "unavailable")
     return (
       <SettingsPageContainer>
-        <p className="text-sm text-muted-foreground">{scope.message}</p>
+        <p className="text-sm text-muted-foreground">{settingsText(scope.message)}</p>
       </SettingsPageContainer>
     );
   if (scope.kind === "environment" && connectedEnvironments.length === 0) {
     return (
       <SettingsPageContainer>
         <p className="text-sm text-muted-foreground">
-          Reconnect {scope.label} to change its settings.
+          {settingsText("Reconnect ")}
+          {scope.label}
+          {settingsText(" to change its settings.")}
         </p>
       </SettingsPageContainer>
     );
@@ -107,6 +120,8 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
 }
 
 function SettingsContentLayout() {
+  const settingsText = useSettingsText();
+
   const contentArea = workspaceAreaProps("settings", 1, "Settings content");
   const location = useLocation();
   const { search, environment } = useSettingsScope();
@@ -117,7 +132,7 @@ function SettingsContentLayout() {
   const [restoreSignal, setRestoreSignal] = useState(0);
 
   return (
-    <AppRouteModal label="Settings">
+    <AppRouteModal label={settingsText("Settings")}>
       <div className="relative flex min-h-0 flex-1">
         <SettingsSidebarNav pathname={location.pathname} />
         <div {...contentArea} className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -129,7 +144,7 @@ function SettingsContentLayout() {
                   onRestored={() => setRestoreSignal((value) => value + 1)}
                 />
               ) : null}
-              <AppRouteModalClose />
+              <AppRouteModalClose label={settingsText("Close")} />
             </div>
           </header>
           <div key={`${contentScopeKey}:${restoreSignal}`} className="min-h-0 flex flex-1 flex-col">
@@ -165,7 +180,9 @@ function SettingsRouteLayout() {
         });
       }}
     >
-      <SettingsContentLayout />
+      <SettingsTextProvider>
+        <SettingsContentLayout />
+      </SettingsTextProvider>
     </SettingsScopeProvider>
   );
 }

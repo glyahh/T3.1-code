@@ -1,3 +1,4 @@
+import { useTimelineFollow } from "./useTimelineFollow";
 import { flushSync } from "react-dom";
 import { AudioPreview } from "../files/AudioPreview";
 import { page } from "vite-plus/test/browser";
@@ -1435,4 +1436,170 @@ it("keeps concurrent approvals actionable outside collapsed work and restores se
   await expect
     .element(screen.getByRole("button", { name: "Open the current tab", exact: true }))
     .toBeVisible();
+});
+
+it.each(["completed", "failed", "interrupted"] as const)(
+  "folds all work after %s and allows reopening",
+  async (status) => {
+    setup();
+    using _now = vi.spyOn(Date, "now").mockReturnValue(Date.parse(CREATED_AT));
+    const runId = RunId.make(`disclosure-${status}`);
+    const props = { ...baseProps(), routeThreadKey: `disclosure-${status}` };
+    const entries = [
+      message("Inspect the project", { runId }, "prompt"),
+      work("read", {
+        runId,
+        tone: "tool",
+        label: "Read file",
+        requestKind: "file-read",
+        toolLifecycleStatus: "completed",
+      }),
+    ];
+    const ui = (finished: boolean, active = true) => (
+      <MessagesTimeline
+        {...props}
+        timelineEntries={
+          finished
+            ? [...entries, message("Done", { role: "assistant", runId }, "final")]
+            : [
+                ...entries,
+                work("second-read", {
+                  runId,
+                  tone: "tool",
+                  label: "Read second file",
+                  requestKind: "file-read",
+                  toolLifecycleStatus: active ? "inProgress" : "completed",
+                }),
+              ]
+        }
+        isWorking={!finished}
+        runningRunId={finished ? null : runId}
+        latestRun={{
+          runId,
+          status: finished ? status : "running",
+          startedAt: CREATED_AT,
+          completedAt: finished ? CREATED_AT : null,
+        }}
+      />
+    );
+    await using screen = await renderElement(ui(false));
+    await expect
+      .element(screen.getByRole("button", { name: "Read 1 file", exact: true }))
+      .toBeVisible();
+    await screen.rerender(ui(false, false));
+    await expect
+      .element(screen.getByRole("button", { name: "Read 2 files", exact: true }))
+      .toBeVisible();
+    await expect.element(screen.getByText("Planning next move").first()).toBeVisible();
+    const disclosure = () => {
+      const button = document.querySelector<HTMLButtonElement>(
+        '[data-timeline-row-kind="turn-fold"] button',
+      );
+      if (!button) throw new Error("Missing turn disclosure");
+      return button;
+    };
+    await vi.waitFor(() => expect(disclosure().getAttribute("aria-expanded")).toBe("true"));
+    await click(disclosure());
+    await click(disclosure());
+    await screen.rerender(ui(true));
+    await vi.waitFor(() => expect(disclosure().getAttribute("aria-expanded")).toBe("false"));
+    if (status === "completed") {
+      await click(disclosure());
+      await screen.rerender(ui(true));
+      await vi.waitFor(() => expect(disclosure().getAttribute("aria-expanded")).toBe("true"));
+    }
+  },
+);
+
+it.each([
+  [false, false],
+  [true, false],
+  [false, true],
+  [true, true],
+])("positions prompts at the safe top inset, history=%s fade=%s", async (withHistory, fade) => {
+  setup();
+  const listRef = createRef<LegendListRef>();
+  const promptId = MessageId.make("centered-prompt");
+  const entries = [
+    ...(withHistory
+      ? [
+          message("Earlier question", {}, "earlier"),
+          message("Earlier answer", { role: "assistant" }, "earlier-answer"),
+        ]
+      : []),
+    message("Inspect the project", {}, promptId),
+  ];
+  function Harness({ active }: { active: boolean }) {
+    const [anchor, setAnchor] = useState<{
+      threadKey: string | null;
+      messageId: MessageId | null;
+    }>({ threadKey: `center-${withHistory}`, messageId: promptId });
+    const follow = useTimelineFollow({
+      legendListRef: listRef,
+      composerTimelineInset: 0,
+      routeThreadKey: `center-${withHistory}`,
+      activeThreadKey: anchor.threadKey,
+      isServerThread: false,
+      serverProjection: null,
+      threadStatus: "live",
+      activeActivityRun: null,
+      activeRunningTurnId: null,
+      timelineEntries: [],
+      timelineAnchorMessageId: anchor.messageId,
+      setTimelineAnchor: setAnchor,
+    });
+    return (
+      <MessagesTimeline
+        {...baseProps()}
+        topFadeEnabled={fade}
+        routeThreadKey={`center-${withHistory}`}
+        listRef={listRef}
+        timelineEntries={
+          active
+            ? [
+                ...entries,
+                work("tool", {
+                  tone: "tool",
+                  label: "Read file",
+                  requestKind: "file-read",
+                  toolLifecycleStatus: "inProgress",
+                }),
+              ]
+            : entries
+        }
+        isWorking
+        anchorMessageId={anchor.messageId}
+        onAnchorReady={follow.onTimelineAnchorReadyStable}
+        onAnchorSizeChanged={follow.onTimelineAnchorSizeChangedStable}
+        onViewportAttach={follow.attachTimelineViewport}
+        liveFollowEnabled={follow.timelineLiveFollowEnabled}
+        onIsAtEndChange={follow.onIsAtEndChangeStable}
+      />
+    );
+  }
+  await using screen = await renderElement(<Harness active={false} />);
+  const expectAtTop = () => {
+    const row = document.querySelector<HTMLElement>('[data-message-id="centered-prompt"]');
+    const viewport = listRef.current?.getScrollableNode();
+    if (!row || !viewport) throw new Error("Missing prompt viewport");
+    const rect = row.getBoundingClientRect();
+    expect(
+      Math.abs(
+        rect.top -
+          viewport.getBoundingClientRect().top -
+          (fade ? parseFloat(getComputedStyle(document.documentElement).fontSize) * 1.5 : 0),
+      ),
+    ).toBeLessThan(4);
+  };
+  await vi.waitFor(expectAtTop);
+  await screen.rerender(<Harness active />);
+  await vi.waitFor(expectAtTop);
+  const root = document.documentElement;
+  const previousSize = root.style.fontSize;
+  try {
+    root.style.fontSize = "17px";
+    await vi.waitFor(expectAtTop);
+  } finally {
+    root.style.fontSize = previousSize;
+  }
 });

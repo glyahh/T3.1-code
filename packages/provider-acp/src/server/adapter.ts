@@ -406,6 +406,7 @@ export interface AcpAdapterV2Flavor {
    */
   readonly reportsPerTurnPromptUsage?: boolean;
   /** Grok can retain task_already_running until process exit. */
+  readonly rebuildAfterUnconfirmedTermination?: boolean;
   readonly restartRuntimeAfterInterrupt?: boolean;
   readonly restartRuntimeOnEveryInterrupt?: boolean;
   readonly terminateRuntimeProcessGroupOnInterrupt?: boolean;
@@ -2023,6 +2024,15 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             runtimeGeneration,
             Effect.gen(function* () {
               yield* Ref.set(runtimeRestartRequired, true);
+              if (flavor.rebuildAfterUnconfirmedTermination) {
+                const context = yield* Ref.get(activeTurn);
+                if (context !== null && !context.finalized) {
+                  context.nativeMetadata = {
+                    ...context.nativeMetadata,
+                    resumeRequiresRebuild: true,
+                  };
+                }
+              }
               if (!followsAgentWorkState) return;
               agentWork = { sessionUpdate: "state_update", state: "idle", stopReason: "error" };
               for (const child of nativeChildren.values()) {
@@ -8068,6 +8078,14 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               return yield* runtimeTransitionPermit.withPermit(
                 Effect.gen(function* () {
                   yield* awaitRuntimeTeardown();
+                  if (threadInput.providerThread.nativeMetadata?.resumeRequiresRebuild) {
+                    return yield* new ProviderAdapter.ProviderAdapterResumeThreadError({
+                      driver,
+                      providerThreadId: threadInput.providerThread.id,
+                      providerSessionId: input.providerSessionId,
+                      cause: "Native runtime terminated before confirming completion",
+                    });
+                  }
                   const sessionId = yield* nativeThreadId(driver, threadInput.providerThread);
                   const previousItemIdentityVersion = itemIdentityVersion;
                   useProviderThreadIdentity(threadInput.providerThread);
@@ -8367,6 +8385,12 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     });
                     const runTransition = Effect.gen(function* () {
                       context.interrupted = true;
+                      if (hardRestart && flavor.rebuildAfterUnconfirmedTermination) {
+                        context.nativeMetadata = {
+                          ...context.nativeMetadata,
+                          resumeRequiresRebuild: true,
+                        };
+                      }
                       if (hardRestart || turnInput.requestRuntimeRestart === true) {
                         yield* quarantineStoppedRun();
                       }

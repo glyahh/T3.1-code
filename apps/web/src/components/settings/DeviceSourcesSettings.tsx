@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import { useAtomValue } from "@effect/atom-react";
 import { Fragment, useState, type ReactNode } from "react";
 import * as Cause from "effect/Cause";
@@ -140,6 +141,8 @@ export function DeviceSourcesSettings(props: {
   readonly supportsEas: boolean;
   readonly supportsSimlock: boolean;
 }) {
+  const settingsText = useSettingsText();
+
   const { scope, environments, connectedEnvironments, environment: primary } = useSettingsScope();
   const projectScope = scope.kind === "project" || scope.kind === "checkout";
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
@@ -186,7 +189,10 @@ export function DeviceSourcesSettings(props: {
       toastManager.add({
         type: "error",
         title: failedTitle,
-        description: `This connection cannot change settings on ${unwritable.map((patch) => name(patch.environmentId)).join(", ")}.`,
+        description: settingsText(
+          "This connection cannot change settings on {0}.",
+          unwritable.map((patch) => name(patch.environmentId)).join(", "),
+        ),
       });
       return false;
     }
@@ -235,7 +241,7 @@ export function DeviceSourcesSettings(props: {
     } catch (error) {
       toastManager.add({
         type: "error",
-        title: "Device host not saved",
+        title: settingsText("Device host not saved"),
         description: error instanceof Error ? error.message : String(error),
       });
     }
@@ -329,12 +335,17 @@ export function DeviceSourcesSettings(props: {
   const rowActions = (onEdit: () => void, onRemove: () => void, extra?: ReactNode) => (
     <>
       <Button size="sm" variant="outline" disabled={disabled} onClick={onEdit}>
-        Edit
+        {settingsText("Edit")}
       </Button>
       <Menu>
         <MenuTrigger
           render={
-            <Button size="icon-sm" variant="ghost-muted" disabled={disabled} aria-label="More" />
+            <Button
+              size="icon-sm"
+              variant="ghost-muted"
+              disabled={disabled}
+              aria-label={settingsText("More")}
+            />
           }
         >
           <MoreVertical />
@@ -342,7 +353,7 @@ export function DeviceSourcesSettings(props: {
         <MenuPopup align="end">
           {extra}
           <MenuItem variant="destructive" onClick={onRemove}>
-            Remove
+            {settingsText("Remove")}
           </MenuItem>
         </MenuPopup>
       </Menu>
@@ -434,7 +445,7 @@ export function DeviceSourcesSettings(props: {
         () =>
           setEditing({ kind: "ssh", host, original: host, ...(grouped ? {} : { only: holders }) }),
         () => void saveSsh(host, true, host, holders),
-        <MenuItem onClick={() => void testSsh(host)}>Test connection</MenuItem>,
+        <MenuItem onClick={() => void testSsh(host)}>{settingsText("Test connection")}</MenuItem>,
       ),
     });
   }
@@ -521,7 +532,8 @@ export function DeviceSourcesSettings(props: {
       <MenuTrigger
         render={<Button size="sm" variant="outline" disabled={disabled || editing !== null} />}
       >
-        <PlusIcon className="size-3.5" /> Add source
+        <PlusIcon className="size-3.5" />
+        {settingsText(" Add source")}
         <ChevronDownIcon className="size-3.5" />
       </MenuTrigger>
       <MenuPopup align="end">
@@ -534,7 +546,7 @@ export function DeviceSourcesSettings(props: {
             })
           }
         >
-          Machine over SSH
+          {settingsText("Machine over SSH")}
         </MenuItem>
         {props.supportsEas ? (
           <MenuItem
@@ -548,7 +560,7 @@ export function DeviceSourcesSettings(props: {
               })
             }
           >
-            EAS Simulator
+            {settingsText("EAS Simulator")}
           </MenuItem>
         ) : null}
         {props.supportsSimlock && simlockEnabled ? (
@@ -557,7 +569,7 @@ export function DeviceSourcesSettings(props: {
               setEditing({ kind: "simlock", host: newSimlockDeviceHost(randomUUID()), isNew: true })
             }
           >
-            Simlock pool (alpha)
+            {settingsText("Simlock pool (alpha)")}
           </MenuItem>
         ) : null}
       </MenuPopup>
@@ -565,7 +577,11 @@ export function DeviceSourcesSettings(props: {
   );
 
   return (
-    <SettingsSection id="device-sources" title="Device sources" headerAction={addMenu}>
+    <SettingsSection
+      id="device-sources"
+      title={settingsText("Device sources")}
+      headerAction={addMenu}
+    >
       {rows.map((row) => (
         <DeviceSourceRow key={row.key} row={row} />
       ))}
@@ -627,6 +643,8 @@ function PlatformIcon(props: {
   row: SourceRow;
   known: ReadonlyArray<SourceEnvironment>;
 }) {
+  const settingsText = useSettingsText();
+
   const availability = (environment: SourceEnvironment) =>
     environment.platforms?.find((candidate) => candidate.platform === props.platform);
   const availableOn = props.known.filter((environment) => availability(environment)?.available);
@@ -653,7 +671,9 @@ function PlatformIcon(props: {
         render={
           <button
             type="button"
-            aria-label={`${props.row.title}: ${props.label} ${available ? "available" : "not available"}`}
+            aria-label={settingsText(
+              `${props.row.title}: ${props.label} ${available ? "available" : "not available"}`,
+            )}
             className={cn(
               "relative grid size-6 shrink-0 place-items-center rounded-md outline-hidden hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               available ? "text-foreground" : "text-muted-foreground/45",
@@ -671,13 +691,20 @@ function PlatformIcon(props: {
       </PopoverTrigger>
       <PopoverPopup side="top" align="end" width="sm">
         <p className="text-sm font-medium">
-          {props.label}{" "}
-          {available ? (partial ? "available on some" : "available") : "not available"}
+          {settingsText(props.label)}
+          {settingsText(" ")}
+          {available
+            ? partial
+              ? settingsText("available on some")
+              : settingsText("available")
+            : settingsText("not available")}
         </p>
         {props.row.shared ? (
           <>
             {uniform && !available && sharedAnswer?.reason ? (
-              <p className="mt-1 text-xs text-muted-foreground">{sharedAnswer.reason}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {settingsText(sharedAnswer.reason)}
+              </p>
             ) : null}
             {several ? (
               <dl className="mt-2 space-y-1.5 text-xs">
@@ -694,7 +721,7 @@ function PlatformIcon(props: {
                 ).map(([heading, environments]) =>
                   environments.length > 0 ? (
                     <div key={heading}>
-                      <dt className="text-muted-foreground">{heading}</dt>
+                      <dt className="text-muted-foreground">{settingsText(heading)}</dt>
                       {environments.map((environment) => {
                         const reason =
                           heading === "Not available"
@@ -704,7 +731,9 @@ function PlatformIcon(props: {
                           <dd key={environment.environmentId}>
                             <span className="block truncate">{environment.label}</span>
                             {reason ? (
-                              <span className="block text-muted-foreground">{reason}</span>
+                              <span className="block text-muted-foreground">
+                                {settingsText(reason)}
+                              </span>
                             ) : null}
                           </dd>
                         );
@@ -723,7 +752,9 @@ function PlatformIcon(props: {
                 <Fragment key={environment.environmentId}>
                   <dt className="text-muted-foreground">{environment.label}</dt>
                   <dd className={entry?.available ? "" : "text-muted-foreground"}>
-                    {entry?.available ? "Available" : (entry?.reason ?? "Not available")}
+                    {settingsText(
+                      entry?.available ? "Available" : (entry?.reason ?? "Not available"),
+                    )}
                   </dd>
                 </Fragment>
               );
@@ -731,7 +762,7 @@ function PlatformIcon(props: {
           </dl>
         ) : !available ? (
           <p className="mt-1 text-xs text-muted-foreground">
-            {availability(props.known[0]!)?.reason ?? "Not set up on this machine."}
+            {settingsText(availability(props.known[0]!)?.reason ?? "Not set up on this machine.")}
           </p>
         ) : null}
       </PopoverPopup>
@@ -740,6 +771,8 @@ function PlatformIcon(props: {
 }
 
 function DeviceSourceRow(props: { row: SourceRow }) {
+  const settingsText = useSettingsText();
+
   const { row } = props;
   const several = row.environments.length > 1;
   const issues = row.environments.filter(
@@ -752,14 +785,14 @@ function DeviceSourceRow(props: { row: SourceRow }) {
     <div className="flex items-center gap-3 border-t border-border/60 px-3 py-3 first:border-t-0 sm:px-4">
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-1.5">
-          <p className="truncate text-sm font-medium">{row.title}</p>
+          <p className="truncate text-sm font-medium">{settingsText(row.title)}</p>
           {row.kind ? (
             <span className="shrink-0 rounded border border-border px-1 text-3xs uppercase tracking-wide text-muted-foreground">
               {row.kind}
             </span>
           ) : null}
         </div>
-        <p className="truncate text-xs text-muted-foreground">{row.description}</p>
+        <p className="truncate text-xs text-muted-foreground">{settingsText(row.description)}</p>
         {problems.map((environment) => (
           <p
             key={environment.environmentId}
@@ -771,13 +804,15 @@ function DeviceSourceRow(props: { row: SourceRow }) {
           >
             <span className="min-w-0 break-words">
               {several ? `${environment.label}: ` : ""}
-              {!several && environment.status.detail
-                ? environment.status.detail
-                : environment.status.label}
+              {settingsText(
+                !several && environment.status.detail
+                  ? environment.status.detail
+                  : environment.status.label,
+              )}
             </span>
             {environment.status.action ? (
               <InlineButton onClick={environment.status.action.run}>
-                {environment.status.action.label}
+                {settingsText(environment.status.action.label)}
               </InlineButton>
             ) : null}
           </p>
@@ -789,7 +824,7 @@ function DeviceSourceRow(props: { row: SourceRow }) {
           className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground"
         >
           <Spinner size="xs" />
-          {pending.status.label}
+          {settingsText(pending.status.label)}
         </span>
       ) : (
         <div className="flex shrink-0 items-center gap-0.5">

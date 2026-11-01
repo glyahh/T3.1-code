@@ -1,3 +1,4 @@
+import { originalSettingsText } from "./settingsText";
 import { HOSTED_APP_CHANNEL } from "~/branding";
 import { isElectron, isSecretsFeatureEnabled } from "~/env";
 import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
@@ -1348,6 +1349,7 @@ export function settingsForThisPlatform(
 export function searchSettings(
   query: string,
   items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS,
+  translate = originalSettingsText,
 ): ReadonlyArray<SettingsSearchItem> {
   const normalizedQuery = normalizeSearchText(query);
   if (normalizedQuery.length === 0) return [];
@@ -1360,6 +1362,8 @@ export function searchSettings(
         title,
         normalizeSearchText(SETTINGS_SECTION_LABELS[item.to]),
         ...(item.searchTerms ?? []).map(normalizeSearchText),
+        normalizeSearchText(translate(item.title)),
+        normalizeSearchText(translate(SETTINGS_SECTION_LABELS[item.to])),
       ];
       if (!queryTokens.every((token) => fields.some((field) => field.includes(token)))) return [];
 

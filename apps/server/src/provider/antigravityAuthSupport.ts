@@ -567,8 +567,14 @@ export function makeAntigravityStdoutTransform(
     });
 }
 
+export interface AntigravityProxyDiagnostic {
+  readonly source: "local_proxy";
+  readonly category: "backend_connection_failed" | "proxy_internal_error";
+}
+
 export function makeAntigravityStderrHandler(
   input: {
+    readonly onDiagnostic?: (diagnostic: AntigravityProxyDiagnostic) => Effect.Effect<void>;
     readonly onAuthorizationUrl?: (
       authorizationUrl: string,
     ) => Effect.Effect<void, AcpErrors.AcpError>;
@@ -585,7 +591,16 @@ export function makeAntigravityStderrHandler(
       : message.startsWith(ANTIGRAVITY_AUTH_BROWSER_MARKER)
         ? decodeBrowserHelperUrl(message.slice(ANTIGRAVITY_AUTH_BROWSER_MARKER.length))
         : undefined;
-    if (url === undefined) return Effect.void;
+    if (url === undefined) {
+      const category = message.includes("Proxy failed to connect to CCPA API:")
+        ? "backend_connection_failed"
+        : message.includes("Proxy unexpected connection error")
+          ? "proxy_internal_error"
+          : undefined;
+      return category === undefined
+        ? Effect.void
+        : (input.onDiagnostic?.({ source: "local_proxy", category }) ?? Effect.void);
+    }
     return url.pipe(
       Effect.flatMap(parseAntigravityAuthorizationUrl),
       Effect.matchEffect({

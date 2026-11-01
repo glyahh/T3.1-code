@@ -1,3 +1,6 @@
+import { Component, type ReactNode, type RefObject } from "react";
+import type { LegendListRef } from "@legendapp/list/react";
+
 export function captureExecutionRows(root: HTMLElement | undefined) {
   if (!root || document.hidden || window.matchMedia("(prefers-reduced-motion: reduce)").matches)
     return [];
@@ -27,5 +30,29 @@ export function settleExecutionRows(rows: ReturnType<typeof captureExecutionRows
       easing: style.getPropertyValue("--agent-motion-ease").trim() || "ease-out",
     });
     rowAnimations.set(element, animation);
+  }
+}
+
+// React's pre-commit snapshot measures the old DOM only when work ends.
+export class ExecutionMotionBoundary extends Component<{
+  identity: string;
+  working: boolean;
+  listRef: RefObject<LegendListRef | null>;
+  children: ReactNode;
+}> {
+  override getSnapshotBeforeUpdate(previous: Readonly<typeof this.props>) {
+    return previous.identity === this.props.identity && previous.working && !this.props.working
+      ? captureExecutionRows(this.props.listRef.current?.getScrollableNode())
+      : [];
+  }
+  override componentDidUpdate(
+    _previous: Readonly<typeof this.props>,
+    _state: unknown,
+    snapshot: ReturnType<typeof captureExecutionRows>,
+  ) {
+    settleExecutionRows(snapshot);
+  }
+  override render() {
+    return this.props.children;
   }
 }

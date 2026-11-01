@@ -1,6 +1,16 @@
 import { MessageId, RunId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { observeTimelineRun } from "./timelineScrollAnchoring";
+import { resolveWebTimelineAnchor } from "./timelineScrollAnchoring";
+
+it("anchors the requested prompt at the supplied safe top inset", () => {
+  const rows = [{ id: "first" }, { id: "reply" }, { id: "next" }];
+  expect(resolveWebTimelineAnchor(rows, "next", (row) => row.id, 300)).toEqual({
+    anchorIndex: 2,
+    anchorOffset: 300,
+  });
+  expect(resolveWebTimelineAnchor(rows, "missing", (row) => row.id, 300)).toBeUndefined();
+});
 
 describe("observeTimelineRun", () => {
   const existing = {

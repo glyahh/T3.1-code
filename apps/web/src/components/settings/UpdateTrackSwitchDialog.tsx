@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import { useAtomValue } from "@effect/atom-react";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { DesktopUpdateChannel } from "@t3tools/contracts";
@@ -39,6 +40,8 @@ export function UpdateTrackSwitchDialog({
   readonly channel: DesktopUpdateChannel;
   readonly onClose: () => void;
 }) {
+  const settingsText = useSettingsText();
+
   // npm dist-tags match the desktop channel names.
   const release = useAtomValue(npmReleaseAtom(channel));
   if (AsyncResult.isSuccess(release) && release.value !== null) {
@@ -49,17 +52,24 @@ export function UpdateTrackSwitchDialog({
     <AlertDialog open onOpenChange={(open) => !open && onClose()}>
       <AlertDialogPopup>
         <AlertDialogHeader>
-          <AlertDialogTitle>Switch to {label}</AlertDialogTitle>
+          <AlertDialogTitle>
+            {settingsText("Switch to ")}
+            {settingsText(label)}
+          </AlertDialogTitle>
           <AlertDialogDescription>
-            {AsyncResult.isFailure(release)
-              ? npmReleaseFailureMessage(release.cause)
-              : AsyncResult.isSuccess(release)
-                ? `Could not find the latest ${label} release in this environment's npm registry.`
-                : "Checking releases…"}
+            {settingsText(
+              AsyncResult.isFailure(release)
+                ? npmReleaseFailureMessage(release.cause)
+                : AsyncResult.isSuccess(release)
+                  ? `Could not find the latest ${label} release in this environment's npm registry.`
+                  : "Checking releases…",
+            )}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+          <AlertDialogClose render={<Button variant="outline" />}>
+            {settingsText("Cancel")}
+          </AlertDialogClose>
         </AlertDialogFooter>
       </AlertDialogPopup>
     </AlertDialog>
@@ -73,6 +83,8 @@ function SwitchPlan({
   readonly release: ChannelSwitchRelease;
   readonly onClose: () => void;
 }) {
+  const settingsText = useSettingsText();
+
   const updateState = useDesktopUpdateState();
   const { environments } = useEnvironments();
   const crossesLocal = desktopUpdateChannelOf(APP_VERSION) !== release.channel;
@@ -101,7 +113,11 @@ function SwitchPlan({
     setChecking(true);
     const fail = (description: string) =>
       toastManager.add(
-        stackedThreadToast({ type: "error", title: `Could not switch to ${label}`, description }),
+        stackedThreadToast({
+          type: "error",
+          title: settingsText("Could not switch to {0}", label),
+          description,
+        }),
       );
     const prepared = await prepareLocalTrackSwitch(bridge, {
       channel: release.channel,
@@ -153,7 +169,7 @@ function SwitchPlan({
     <UpdateEverythingDialog
       open
       onOpenChange={(open) => !open && !checking && onClose()}
-      title={`Switch to ${label}?`}
+      title={settingsText("Switch to {0}?", label)}
       version={release.version}
       providerCount={0}
       rows={everything.rows}
@@ -169,7 +185,7 @@ function SwitchPlan({
           : []),
       ]}
       restarts={everything.restarts}
-      confirmLabel={checking ? "Checking…" : `Switch to ${label}`}
+      confirmLabel={settingsText(checking ? "Checking…" : `Switch to ${label}`)}
       busy={checking}
       disabledReason={
         !switchesLocal || localBlocked === null ? null : `This app cannot switch: ${localBlocked}.`

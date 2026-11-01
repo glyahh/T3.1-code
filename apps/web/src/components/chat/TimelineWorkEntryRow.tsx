@@ -113,7 +113,7 @@ export function ThreadReadLabel({
 }
 
 const toolCallExpandedBodyClassName =
-  "max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-secondary-label text-(length:--font-size-code,var(--text-2xs)) leading-relaxed select-text";
+  "max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-agent-activity text-(length:--font-size-code,var(--text-2xs)) leading-relaxed select-text";
 
 const stopRowToggle = (e: { stopPropagation: () => void }) => e.stopPropagation();
 
@@ -364,16 +364,14 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         : showFailedIndicator
           ? failedToolIconClassName
           : workEntry.tone === "tool"
-            ? "text-icon-muted"
+            ? "text-agent-activity"
             : iconConfig.className,
   );
   const headingClass = showWarningIndicator
     ? "font-medium text-warning"
     : showDestructiveRowStyle
       ? "font-medium text-destructive"
-      : workLogEntryIsToolLike(workEntry)
-        ? "text-secondary-label"
-        : "text-foreground/80";
+      : "text-agent-activity";
   const threadLabel = isReasoning ? null : threadReadLabel(previewText, threadTarget);
   const accessiblePreview = [threadLabel?.text ?? previewText, answerPreview]
     .filter(Boolean)
@@ -512,7 +510,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             >
               <ChevronRightIcon
                 className={cn(
-                  "size-3 shrink-0 text-icon-muted opacity-70 transition-transform duration-200",
+                  "size-3 shrink-0 text-agent-activity opacity-70 transition-transform duration-200",
                   expanded && "rotate-90",
                 )}
               />

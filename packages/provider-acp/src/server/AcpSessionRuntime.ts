@@ -2312,7 +2312,17 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
     error: EffectAcpErrors.AcpError,
   ) {
     yield* recordTermination(error);
-    yield* child.kill({ forceKillAfter: "1 second" }).pipe(Effect.ignore);
+    if (options.ownDetachedProcessGroup === true)
+      yield* terminateProcessGroup.pipe(
+        Effect.mapError(
+          (cause) =>
+            new EffectAcpErrors.AcpTransportError({
+              detail: "Failed to terminate owned ACP process group",
+              cause,
+            }),
+        ),
+      );
+    else yield* child.kill({ forceKillAfter: "1 second" }).pipe(Effect.ignore);
   });
 
   const cancel = Effect.gen(function* () {

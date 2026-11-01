@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import { SettingsGroup } from "./SettingsGroup";
 import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -21,6 +22,8 @@ export function FoldedSettingsSection({
   readonly headerPlacement?: "inside" | "outside";
   readonly children: ReactNode;
 }) {
+  const settingsText = useSettingsText();
+
   const [open, setOpen] = useState(false);
   const searchTargetId = useSettingsSearchTargetId();
   const targetRef = useSettingsSearchTarget<HTMLElement>(id);
@@ -42,7 +45,7 @@ export function FoldedSettingsSection({
             >
               <h2>
                 <CollapsibleTrigger className="flex min-h-7 items-center gap-2 rounded-md text-sm font-normal text-foreground/70 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
-                  {title}
+                  {settingsText(title)}
                   <ChevronRightIcon
                     aria-hidden
                     className={cn(
@@ -75,9 +78,11 @@ export function FoldedSettingsSection({
                 open && "rotate-90",
               )}
             />
-            <span className="shrink-0 text-sm font-medium">{title}</span>
+            <span className="shrink-0 text-sm font-medium">{settingsText(title)}</span>
             {summary ? (
-              <span className="min-w-0 truncate text-xs text-muted-foreground">{summary}</span>
+              <span className="min-w-0 truncate text-xs text-muted-foreground">
+                {settingsText(summary)}
+              </span>
             ) : null}
           </CollapsibleTrigger>
           {control ? <div className="flex shrink-0 items-center">{control}</div> : null}

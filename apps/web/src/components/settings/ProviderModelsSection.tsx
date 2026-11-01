@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import { ArrowDownIcon, ArrowUpIcon, PencilIcon, PlusIcon, StarIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -137,6 +138,8 @@ export function ProviderModelsSection({
   onToggleFavorite,
   onModelOrderChange,
 }: ProviderModelsSectionProps) {
+  const settingsText = useSettingsText();
+
   const [input, setInput] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [filter, setFilter] = useState("");
@@ -300,7 +303,7 @@ export function ProviderModelsSection({
 
   const groupLabel = (label: string, isFirst: boolean) => (
     <div className={cn("px-2 pb-1.5 text-2xs text-muted-foreground", isFirst ? "pt-1" : "pt-5")}>
-      {label}
+      {settingsText(label)}
     </div>
   );
 
@@ -311,11 +314,11 @@ export function ProviderModelsSection({
           <Input
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
-            placeholder="Filter models"
+            placeholder={settingsText("Filter models")}
             size="sm"
             className="w-56 max-w-full"
             spellCheck={false}
-            aria-label="Filter models"
+            aria-label={settingsText("Filter models")}
           />
         ) : null}
         <div className="flex items-center gap-2">
@@ -331,15 +334,17 @@ export function ProviderModelsSection({
                 )
               }
             >
-              {allBuiltInModelsHidden ? "Enable all" : "Disable all"}
+              {allBuiltInModelsHidden ? settingsText("Enable all") : settingsText("Disable all")}
             </Button>
           ) : null}
           <span className="text-xs text-muted-foreground">
-            {models.length} model{models.length === 1 ? "" : "s"}
+            {models.length}
+            {settingsText(" model")}
+            {models.length === 1 ? "" : settingsText("s")}
             {favoriteCount > 0
-              ? ` · ${favoriteCount} favorite${favoriteCount === 1 ? "" : "s"}`
+              ? settingsText(" · {0} favorite{1}", favoriteCount, favoriteCount === 1 ? "" : "s")
               : ""}
-            {hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ""}
+            {hiddenCount > 0 ? settingsText(" · {0} hidden", hiddenCount) : ""}
           </span>
         </div>
         {driverKind !== "antigravity" && !isAdding ? (
@@ -352,7 +357,7 @@ export function ProviderModelsSection({
             onClick={() => setIsAdding(true)}
           >
             <PlusIcon className="size-3" />
-            Add custom model
+            {settingsText("Add custom model")}
           </Button>
         ) : null}
       </div>
@@ -362,7 +367,9 @@ export function ProviderModelsSection({
       >
         {visibleModels.length === 0 ? (
           <p className="px-2 py-2 text-xs text-muted-foreground">
-            {isFiltering ? "No models match." : "No models reported for this provider yet."}
+            {isFiltering
+              ? settingsText("No models match.")
+              : settingsText("No models reported for this provider yet.")}
           </p>
         ) : null}
         {visibleModels.map((model, index) => {
@@ -375,15 +382,21 @@ export function ProviderModelsSection({
               : undefined;
           return (
             <div key={`${instanceId}:${model.slug}:group`}>
-              {startsGroup && favoriteCount > 0 && group === "favorite"
-                ? groupLabel("Favorites", index === 0)
-                : null}
-              {startsGroup && favoriteCount > 0 && group === "visible"
-                ? groupLabel("All", index === 0)
-                : null}
-              {startsGroup && group === "hidden"
-                ? groupLabel("Hidden from picker", index === 0)
-                : null}
+              {settingsText(
+                startsGroup && favoriteCount > 0 && group === "favorite"
+                  ? groupLabel("Favorites", index === 0)
+                  : null,
+              )}
+              {settingsText(
+                startsGroup && favoriteCount > 0 && group === "visible"
+                  ? groupLabel("All", index === 0)
+                  : null,
+              )}
+              {settingsText(
+                startsGroup && group === "hidden"
+                  ? groupLabel("Hidden from picker", index === 0)
+                  : null,
+              )}
               {renderRow(model)}
               {editingEntry ? (
                 <CustomModelEditor
@@ -422,15 +435,17 @@ export function ProviderModelsSection({
               event.preventDefault();
               handleAdd();
             }}
-            placeholder={driverKind ? CUSTOM_MODEL_PLACEHOLDER_BY_KIND[driverKind] : "model-slug"}
+            placeholder={settingsText(
+              driverKind ? CUSTOM_MODEL_PLACEHOLDER_BY_KIND[driverKind] : "model-slug",
+            )}
             spellCheck={false}
           />
           <div className="flex shrink-0 gap-2">
             <Button size="sm" variant="outline" onClick={handleAdd}>
-              Add
+              {settingsText("Add")}
             </Button>
             <Button size="sm" variant="ghost" onClick={cancelAdd}>
-              Cancel
+              {settingsText("Cancel")}
             </Button>
           </div>
         </div>
@@ -474,6 +489,8 @@ function ProviderModelRow({
   readonly onToggleEdit: (slug: string) => void;
   readonly onRemove: (slug: string) => void;
 }) {
+  const settingsText = useSettingsText();
+
   const capLabels = describeModelCapabilities(model, flagMissingReasoning);
   const nameClassName = cn("text-xs", isHidden ? "text-muted-foreground" : "text-foreground/90");
   const pickerTooltip = model.isCustom
@@ -498,16 +515,19 @@ function ProviderModelRow({
               variant="ghost-muted"
               disabled={!canWritePreferences}
               onClick={() => onToggleFavorite(model.slug)}
-              aria-label={`${isFavorite ? "Remove" : "Add"} ${model.name} ${
-                isFavorite ? "from" : "to"
-              } favorites`}
+              aria-label={settingsText(
+                "{0} {1} {2} favorites",
+                isFavorite ? "Remove" : "Add",
+                model.name,
+                isFavorite ? "from" : "to",
+              )}
             />
           }
         >
           <StarIcon className={cn("size-3", isFavorite && "fill-current text-warning")} />
         </TooltipTrigger>
         <TooltipPopup side="top">
-          {isFavorite ? "Remove from favorites" : "Add to favorites"}
+          {isFavorite ? settingsText("Remove from favorites") : settingsText("Add to favorites")}
         </TooltipPopup>
       </Tooltip>
       <span className="flex min-w-0 items-baseline gap-2">
@@ -532,12 +552,14 @@ function ProviderModelRow({
           </TooltipPopup>
         </Tooltip>
         {model.isCustom ? (
-          <span className="shrink-0 text-2xs text-muted-foreground/70">custom</span>
+          <span className="shrink-0 text-2xs text-muted-foreground/70">
+            {settingsText("custom")}
+          </span>
         ) : null}
       </span>
       <span className="text-2xs text-muted-foreground/70">
         {capLabels.length > 0 ? (
-          <span className="hidden sm:inline">{capLabels.join(" · ")}</span>
+          <span className="hidden sm:inline">{settingsText(capLabels.join(" · "))}</span>
         ) : null}
       </span>
       <span className="flex shrink-0 items-center justify-end gap-0.5">
@@ -551,13 +573,13 @@ function ProviderModelRow({
                     variant="ghost-muted"
                     disabled={!canWritePreferences || !canMoveUp}
                     onClick={() => onMove(model.slug, -1)}
-                    aria-label={`Move ${model.name} up`}
+                    aria-label={settingsText("Move {0} up", model.name)}
                   />
                 }
               >
                 <ArrowUpIcon className="size-3" />
               </TooltipTrigger>
-              <TooltipPopup side="top">Move up</TooltipPopup>
+              <TooltipPopup side="top">{settingsText("Move up")}</TooltipPopup>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger
@@ -567,13 +589,13 @@ function ProviderModelRow({
                     variant="ghost-muted"
                     disabled={!canWritePreferences || !canMoveDown}
                     onClick={() => onMove(model.slug, 1)}
-                    aria-label={`Move ${model.name} down`}
+                    aria-label={settingsText("Move {0} down", model.name)}
                   />
                 }
               >
                 <ArrowDownIcon className="size-3" />
               </TooltipTrigger>
-              <TooltipPopup side="top">Move down</TooltipPopup>
+              <TooltipPopup side="top">{settingsText("Move down")}</TooltipPopup>
             </Tooltip>
           </>
         ) : null}
@@ -586,14 +608,14 @@ function ProviderModelRow({
                     size="icon-micro"
                     variant="ghost-muted"
                     disabled={!canManageCustomModels}
-                    aria-label={`Edit ${model.slug}`}
+                    aria-label={settingsText("Edit {0}", model.slug)}
                     onClick={() => onToggleEdit(model.slug)}
                   />
                 }
               >
                 <PencilIcon className="size-3" />
               </TooltipTrigger>
-              <TooltipPopup side="top">Edit name and options</TooltipPopup>
+              <TooltipPopup side="top">{settingsText("Edit name and options")}</TooltipPopup>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger
@@ -602,14 +624,14 @@ function ProviderModelRow({
                     size="icon-micro"
                     variant="ghost-muted"
                     disabled={!canManageCustomModels}
-                    aria-label={`Remove ${model.slug}`}
+                    aria-label={settingsText("Remove {0}", model.slug)}
                     onClick={() => onRemove(model.slug)}
                   />
                 }
               >
                 <XIcon className="size-3" />
               </TooltipTrigger>
-              <TooltipPopup side="top">Remove custom model</TooltipPopup>
+              <TooltipPopup side="top">{settingsText("Remove custom model")}</TooltipPopup>
             </Tooltip>
           </>
         ) : null}
@@ -622,7 +644,7 @@ function ProviderModelRow({
             checked={!isHidden}
             disabled={!canWritePreferences || model.isCustom}
             onCheckedChange={(checked) => onSetHidden(model.slug, !checked)}
-            aria-label={`Show ${model.name} in the model picker`}
+            aria-label={settingsText("Show {0} in the model picker", model.name)}
           />
         </TooltipTrigger>
         <TooltipPopup side="top">{pickerTooltip}</TooltipPopup>
