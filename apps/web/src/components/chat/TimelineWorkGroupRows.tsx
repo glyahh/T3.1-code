@@ -9,7 +9,10 @@ import { tickTextContent } from "~/lib/tickTextContent";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import { memo, use, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
-import { summarizeToolGroup } from "@t3tools/client-runtime/work-log/presentation";
+import {
+  summarizeToolGroup,
+  toolGroupSummaryKind,
+} from "@t3tools/client-runtime/work-log/presentation";
 import { workEntryDisplayIndicatesToolFailure, workLogEntryIsToolLike } from "../../session-logic";
 import { Minimize2Icon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
@@ -544,21 +547,20 @@ export function WorkGroupTimelineRow({
   const label = entry
     ? liveWorkEntryLabel(entry, ctx.workspaceRoot, row.kind === "work-live" && row.active)
     : "";
-  const completedTools =
+  const summaryTools =
     row.kind === "work-live"
-      ? row.groupedEntries.filter(
-          (entry) =>
-            workLogEntryIsToolLike(entry) &&
-            entry.toolLifecycleStatus !== "inProgress" &&
-            !(row.active && entry.id === row.entry.id),
+      ? row.summaryEntries.filter(
+          (entry) => workLogEntryIsToolLike(entry) && entry.itemType !== "reasoning",
         )
       : [];
+  const liveSummary = summaryTools.length ? summarizeToolGroup(summaryTools, 3, "attempts") : null;
   const summary =
     row.kind === "work-toggle"
       ? row.summary
-      : completedTools.length
-        ? summarizeToolGroup(completedTools, 3).summary
-        : null;
+      : (liveSummary?.summary ??
+        (row.kind === "work-live" && row.expanded
+          ? summarizeToolGroup(row.groupedEntries, 3).summary
+          : null));
   const progressAt = entry?.projectedItem
     ? DateTime.formatIso(entry.projectedItem.item.updatedAt)
     : (entry?.createdAt ?? row.createdAt ?? "");
@@ -582,20 +584,24 @@ export function WorkGroupTimelineRow({
           label={summary ?? status}
           active={row.kind === "work-live" && !summary}
           iconName={
-            entry
-              ? workEntryIconName(entry)
-              : row.kind === "work-toggle"
-                ? (row.toolSurface ?? toolGroupSummaryIconName(row.summaryKind))
-                : "brain"
+            liveSummary
+              ? toolGroupSummaryIconName(toolGroupSummaryKind(summaryTools))
+              : entry
+                ? workEntryIconName(entry)
+                : row.kind === "work-toggle"
+                  ? (row.toolSurface ?? toolGroupSummaryIconName(row.summaryKind))
+                  : "brain"
           }
           toolIcon={
-            entry
-              ? (entry.toolIcon ?? entry.toolSource?.icon)
-              : row.kind === "work-toggle"
-                ? row.toolIcon
-                : undefined
+            liveSummary
+              ? undefined
+              : entry
+                ? (entry.toolIcon ?? entry.toolSource?.icon)
+                : row.kind === "work-toggle"
+                  ? row.toolIcon
+                  : undefined
           }
-          failed={failed}
+          failed={liveSummary?.hasFailure ?? failed}
           expanded={row.expanded === true}
           createdAt={row.createdAt ?? ""}
           timestampFormat={ctx.timestampFormat}
@@ -604,9 +610,11 @@ export function WorkGroupTimelineRow({
           }}
         />
       ) : null}
-      {row.kind === "thinking" || (row.kind === "work-live" && summary) ? (
+      {!row.expanded && (row.kind === "thinking" || (row.kind === "work-live" && summary)) ? (
         <LiveActivityRow
-          iconName={entry ? workEntryIconName(entry) : "brain"}
+          iconName={
+            entry?.toolLifecycleStatus === "inProgress" ? workEntryIconName(entry) : "brain"
+          }
           label={status}
           active={ctx.pendingApprovals.size === 0}
           shimmer={ctx.pendingApprovals.size === 0}
@@ -643,8 +651,11 @@ function WorkGroupHeader(props: {
         <ToolActivityIconView
           icon={props.toolIcon}
           fallbackName={props.iconName}
-          className="size-4 shrink-0 stroke-2 text-agent-activity"
-          muted
+          className={cn(
+            "size-4 shrink-0 stroke-2",
+            props.failed ? failedToolIconClassName : "text-agent-activity",
+          )}
+          muted={!props.failed}
         />
       }
       label={

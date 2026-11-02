@@ -60,6 +60,7 @@ function createVisitScrollState(
 ) {
   return {
     visit,
+    canShowScrollToBottom: false,
     // Debounce *showing* the scroll-to-bottom pill so it doesn't flash during
     // thread switches. LegendList fires scroll events with isAtEnd=false while
     // initialScrollAtEnd is settling; hiding is always immediate.
@@ -192,7 +193,7 @@ export function useTimelineFollow(input: TimelineFollowInput) {
   const [pill, setPill] = useState<{ readonly visit: TimelineFollowVisit; readonly show: boolean }>(
     { visit, show: false },
   );
-  const showScrollToBottom = pill.visit === visit ? pill.show : !visit.followEnd;
+  const showScrollToBottom = pill.visit === visit ? pill.show : false;
   // Called on every streamed chunk while following; an unchanged pill must
   // bail out instead of re-rendering ChatView.
   const setShowScrollToBottom = (show: boolean) =>
@@ -220,7 +221,10 @@ export function useTimelineFollow(input: TimelineFollowInput) {
     if (visitScrollRef.current?.visit !== visit) {
       visitScrollRef.current = createVisitScrollState(visit, (shownVisit) => {
         // A debounce that outlived its visit must not overwrite the current one's pill.
-        if (visitScrollRef.current?.visit === shownVisit)
+        if (
+          visitScrollRef.current?.visit === shownVisit &&
+          visitScrollRef.current.canShowScrollToBottom
+        )
           setPill({ visit: shownVisit, show: true });
       });
     }
@@ -321,6 +325,7 @@ export function useTimelineFollow(input: TimelineFollowInput) {
     // Stops a running position restore; follow itself is re-armed below.
     viewportRef.current?.navigate({ releasesFollow: false });
     followStore.dispatch(visit, { type: "followEnd" });
+    visitScroll().canShowScrollToBottom = false;
     visitScroll().showScrollDebouncer.cancel();
     setShowScrollToBottom(false);
     setTimelineAnchor(releaseChatTimelineAnchor);
@@ -495,21 +500,23 @@ export function useTimelineFollow(input: TimelineFollowInput) {
   };
   const onTimelineFooterGrowStable = useStableCallback(onTimelineFooterGrow);
 
-  const onIsAtEndChange = (isAtEnd: boolean) => {
+  const onIsAtEndChange = (isAtEnd: boolean, isBeforeLatestUserMessage = false) => {
     const scroll = visitScroll();
+    const couldShow = scroll.canShowScrollToBottom;
+    scroll.canShowScrollToBottom =
+      !isAtEnd && isBeforeLatestUserMessage && readFollow().mode === "released";
     if (!isAtEnd && readFollow().mode === "following") {
       scroll.showScrollDebouncer.cancel();
-      setShowScrollToBottom(false);
+      if (couldShow || showScrollToBottom) setShowScrollToBottom(false);
       return;
     }
-    const { before, after } = followStore.dispatch(visit, {
+    const { after } = followStore.dispatch(visit, {
       type: isAtEnd ? "reachedEnd" : "leftEnd",
     });
-    if (after === before) return;
-    if (after.mode === "following") {
+    if (after.mode === "following" || !scroll.canShowScrollToBottom) {
       scroll.showScrollDebouncer.cancel();
-      setShowScrollToBottom(false);
-    } else {
+      if (couldShow || showScrollToBottom) setShowScrollToBottom(false);
+    } else if (!couldShow) {
       scroll.showScrollDebouncer.maybeExecute();
     }
   };
@@ -518,6 +525,7 @@ export function useTimelineFollow(input: TimelineFollowInput) {
   /** Arms the anchor for a message the user just sent, before its run exists. */
   const anchorNewTurn = (threadKey: string, messageId: MessageId) => {
     followStore.dispatch(visit, { type: "followEnd" });
+    visitScroll().canShowScrollToBottom = false;
     visitScroll().showScrollDebouncer.cancel();
     setShowScrollToBottom(false);
     setTimelineAnchor({ threadKey, messageId });

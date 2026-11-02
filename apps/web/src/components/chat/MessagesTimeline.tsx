@@ -49,6 +49,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
   type SyntheticEvent,
 } from "react";
 import {
@@ -83,6 +84,7 @@ import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setu
 import { resolveCitationPhase, type CitedHistory } from "./citationProcedure";
 import {
   resolveTimelineIsAtEnd,
+  resolveTimelineViewportPosition,
   resolveTimelineMinimapHasPersistentGutter,
   resolveTimelineMinimapCurrentIndex,
   isTimelineMinimapRowVisible,
@@ -162,13 +164,14 @@ const TIMELINE_LIST_FADE_HEADER = (
 function TimelineListFooter({
   composerInset,
   onGrow,
+  contentRef,
   children,
 }: {
   readonly composerInset: number;
+  readonly contentRef: RefObject<HTMLDivElement | null>;
   readonly onGrow: (() => void) | undefined;
   readonly children?: ReactNode;
 }) {
-  const contentRef = useRef<HTMLDivElement>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports growth of the footer's content, which the list does not follow
   useLayoutEffect(() => {
     const content = contentRef.current;
@@ -179,7 +182,7 @@ function TimelineListFooter({
       if (next > height) onGrow();
       height = next;
     });
-  }, [onGrow]);
+  }, [onGrow, contentRef]);
   return (
     <div>
       <div ref={contentRef}>{children}</div>
@@ -304,7 +307,7 @@ interface MessagesTimelineProps {
   ) => void;
   onAnchorSizeChanged: (messageId: MessageId, size: number) => void;
   contentInsetEndAdjustment: number;
-  onIsAtEndChange: (isAtEnd: boolean) => void;
+  onIsAtEndChange: (isAtEnd: boolean, isBeforeLatestUserMessage: boolean) => void;
   /** Disable while reading history to prevent LegendList re-pinning near the bottom. */
   liveFollowEnabled: boolean;
   /** Receives the list's viewport when it mounts; the returned cleanup runs when it goes away. */
@@ -793,6 +796,10 @@ const ConversationTimeline = memo(function ConversationTimeline({
     index === currentActivityIndex ? { ...row, id: "live-activity-row" } : row,
   );
   const rows = useStableRows(activityRows, listIdentityKey);
+  const latestUserMessageRow = rows.findLast(
+    (row) => row.kind === "message" && row.message.role === "user",
+  );
+  const footerContentRef = useRef<HTMLDivElement>(null);
   const matchedApprovalRequestIds = new Set<string>();
   for (const row of pendingApprovalRequestIds.size > 0 ? rows : []) {
     const entries =
@@ -1026,10 +1033,10 @@ const ConversationTimeline = memo(function ConversationTimeline({
     readonly threadKey: string;
     readonly position: Parameters<typeof rememberTimelinePosition>[1];
   } | null>(null);
-  const rememberPosition = (followingEnd: boolean) => {
+  const rememberPosition = (followingEnd: boolean, isAtContentEnd: boolean | undefined) => {
     const state = listRef.current?.getState?.();
     if (restoringThreadPosition || state?.data !== rows) return;
-    const isAtEnd = resolveTimelineIsAtEnd(state);
+    const isAtEnd = isAtContentEnd ?? resolveTimelineIsAtEnd(state);
     const position = state.data.length ? resolveWorkGroupScrollAnchor(state) : undefined;
     if (position && isAtEnd !== undefined) {
       const index = state.indexByKey(position.rowId);
@@ -1064,10 +1071,37 @@ const ConversationTimeline = memo(function ConversationTimeline({
   };
 
   const handleScroll = () => {
-    if (restoringThreadPosition || listRef.current?.getState?.().data !== rows) return;
-    const isAtEnd = rememberPosition(liveFollowEnabled && !anchoredEndSpace);
+    const state = listRef.current?.getState?.();
+    if (restoringThreadPosition || state?.data !== rows) return;
+    const element = listRef.current?.getScrollableNode();
+    const first = state.startBuffered;
+    const firstRow = first === undefined || first < 0 ? undefined : state.elementAtIndex(first);
+    const firstTop = first === undefined || first < 0 ? undefined : state.positionAtIndex(first);
+    const last = rows.length - 1;
+    const lastTop = last < 0 ? undefined : state.positionAtIndex(last);
+    const lastHeight = last < 0 ? undefined : state.sizeAtIndex(last);
+    const latestUserIndex = latestUserMessageRow
+      ? state.indexByKey(latestUserMessageRow.id)
+      : undefined;
+    const position = resolveTimelineViewportPosition({
+      scroll:
+        firstRow && element && firstTop !== undefined
+          ? firstTop + element.getBoundingClientRect().top - firstRow.getBoundingClientRect().top
+          : state.scroll,
+      viewportHeight: element?.clientHeight ?? 0,
+      composerInset: contentInsetEndAdjustment,
+      latestUserTop:
+        firstRow && latestUserIndex !== undefined
+          ? state.positionAtIndex(latestUserIndex)
+          : undefined,
+      contentBottom:
+        lastTop === undefined || lastHeight === undefined
+          ? undefined
+          : lastTop + lastHeight + (footerContentRef.current?.offsetHeight ?? 0),
+    });
+    const isAtEnd = rememberPosition(liveFollowEnabled && !anchoredEndSpace, position.isAtEnd);
     if (isAtEnd !== undefined && !citationPositioning) {
-      onIsAtEndChange(isAtEnd);
+      onIsAtEndChange(isAtEnd, position.isBeforeLatestUserMessage);
     }
     scheduleMinimapRefresh();
   };
@@ -1121,9 +1155,10 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const attachTimelineViewportElement = (viewportElement: HTMLDivElement | null) => {
     setTimelineViewportElement(viewportElement);
     if (!viewportElement) return;
-    const stopObserving = observeResize(viewportElement, () =>
-      measureTimelineGutter(viewportElement),
-    );
+    const stopObserving = observeResize(viewportElement, () => {
+      measureTimelineGutter(viewportElement);
+      handleScroll();
+    });
     return () => {
       stopObserving();
       setTimelineViewportElement(null);
@@ -1283,12 +1318,12 @@ const ConversationTimeline = memo(function ConversationTimeline({
         handleContentSizeChanged(laidOutData);
       });
     };
-    const stopListeningToContentSize = list
-      ?.getState()
-      .listen("totalSize", () => scheduleContentSizeChanged());
+    const stopListeningToContentSize = (
+      ["totalSize", "footerSize", "headerSize", "anchoredEndSpaceSize"] as const
+    ).map((signal) => list?.getState().listen(signal, scheduleContentSizeChanged));
     scheduleContentSizeChanged();
     return () => {
-      stopListeningToContentSize?.();
+      for (const stop of stopListeningToContentSize) stop?.();
       stopRememberingRelease?.();
       if (contentSizeFrame !== null) cancelAnimationFrame(contentSizeFrame);
       detachViewport?.();
@@ -1378,6 +1413,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const listExtraData = { identity: listIdentityKey, rowCount: rows.length, sharedState };
   const timelineListFooter = (
     <TimelineListFooter
+      contentRef={footerContentRef}
       composerInset={anchoredEndSpace ? 0 : contentInsetEndAdjustment}
       onGrow={onFooterGrow}
     >

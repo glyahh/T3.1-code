@@ -419,6 +419,24 @@ function toolGroupActionCount(
   return changedFiles.size + editsWithoutFileDetails;
 }
 
+const TOOL_ACTION_NOUNS: Record<ToolGroupAction, string> = {
+  "link-pr": "pull request link",
+  "unlink-pr": "pull request unlink",
+  "list-prs": "pull request check",
+  "watch-pr": "pull request watch",
+  "unwatch-pr": "pull request unwatch",
+  read: "file read",
+  edit: "file edit",
+  command: "command",
+  "thread-create": "thread creation",
+  browser: "browser action",
+  device: "device action",
+  "code-search": "code search",
+  search: "web search",
+  other: "tool call",
+  update: "update",
+};
+
 function toolGroupActionLabel(action: ToolGroupAction, count: number): string {
   switch (action) {
     case "link-pr":
@@ -517,6 +535,7 @@ function summaryActionPriority(action: ToolGroupAction | T3McpToolSummaryAction)
 export function summarizeToolGroup(
   entries: ReadonlyArray<WorkLogPresentationEntry>,
   maxActions = 2,
+  mode: "completed" | "attempts" = "completed",
 ): {
   summary: string;
   hasFailure: boolean;
@@ -544,7 +563,7 @@ export function summarizeToolGroup(
       workEntryToolName(entry),
       t3ToolSummaryCall(entry).input,
     );
-    if (entry.toolSource && t3Action === null) {
+    if (mode === "completed" && entry.toolSource && t3Action === null) {
       sources.set(entry.toolSource.key, entry.toolSource);
       continue;
     }
@@ -558,15 +577,24 @@ export function summarizeToolGroup(
     index,
     count: group.entries.length,
     priority: summaryActionPriority(action),
-    ...(group.t3Action
-      ? summarizeT3ToolCalls(group.t3Action, group.entries.map(t3ToolSummaryCall))
-      : {
-          label: toolGroupActionLabel(
-            group.action,
-            toolGroupActionCount(group.action, group.entries),
-          ),
+    ...(mode === "attempts"
+      ? {
+          label: (() => {
+            const count = group.entries.length;
+            const noun = TOOL_ACTION_NOUNS[group.action];
+            return `${count} ${noun}${count === 1 ? "" : noun.endsWith("search") ? "es" : "s"}`;
+          })(),
           failedCount: group.entries.filter(workEntryDisplayIndicatesToolFailure).length,
-        }),
+        }
+      : group.t3Action
+        ? summarizeT3ToolCalls(group.t3Action, group.entries.map(t3ToolSummaryCall))
+        : {
+            label: toolGroupActionLabel(
+              group.action,
+              toolGroupActionCount(group.action, group.entries),
+            ),
+            failedCount: group.entries.filter(workEntryDisplayIndicatesToolFailure).length,
+          }),
   }));
   const selected = [...summaries]
     .sort((a, b) => a.priority - b.priority || a.index - b.index)
@@ -589,6 +617,7 @@ export function summarizeToolGroup(
   }
   const sourcedCount = entries.filter(
     (entry) =>
+      mode === "completed" &&
       entry.toolSource !== undefined &&
       resolveT3McpToolDefinition(workEntryToolName(entry)) === null,
   ).length;

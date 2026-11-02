@@ -333,6 +333,34 @@ export function resolveTimelineIsAtEnd(state: TimelineEndState | undefined): boo
   return contentLength - scroll - scrollLength <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX;
 }
 
+export function resolveTimelineViewportPosition({
+  scroll,
+  viewportHeight,
+  composerInset,
+  latestUserTop,
+  contentBottom,
+}: {
+  readonly scroll: number;
+  readonly viewportHeight: number;
+  readonly composerInset: number;
+  readonly latestUserTop: number | undefined;
+  readonly contentBottom: number | undefined;
+}) {
+  const bottom = scroll + Math.max(0, viewportHeight - composerInset);
+  const measured = viewportHeight > 0 && Number.isFinite(bottom);
+  return {
+    isAtEnd:
+      measured && contentBottom !== undefined && Number.isFinite(contentBottom)
+        ? contentBottom - bottom <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX
+        : undefined,
+    isBeforeLatestUserMessage:
+      measured &&
+      latestUserTop !== undefined &&
+      Number.isFinite(latestUserTop) &&
+      latestUserTop >= bottom,
+  };
+}
+
 export function resolveTimelineMinimapHeightStyle(itemCount: number): string {
   const naturalHeight = Math.max(1, (itemCount - 1) * TIMELINE_MINIMAP_ITEM_SPACING);
   return `min(${naturalHeight}px, ${TIMELINE_MINIMAP_MAX_HEIGHT_CSS})`;
@@ -519,6 +547,7 @@ type MessagesTimelineRowContent =
       createdAt: string;
       entry: WorkLogEntry;
       groupedEntries: WorkLogEntry[];
+      summaryEntries: WorkLogEntry[];
       groupId: string;
       expanded: boolean;
       active: boolean;
@@ -1631,6 +1660,11 @@ export function deriveMessagesTimelineRows(input: {
   const latestRunningToolEntry = visibleActiveToolEntries.findLast((entry) =>
     workEntryIsActiveTurnActivity(entry.entry),
   );
+  // Some agents defer read completion until turn end; keep newer activity in the status slot.
+  const currentActivityEntry =
+    latestRunningToolEntry && toolGroupAction(latestRunningToolEntry.entry) !== "read"
+      ? latestRunningToolEntry
+      : latestVisibleToolEntry;
   const latestToolKeepsActivityLive =
     latestRunningToolEntry !== undefined ||
     (input.collapsedLiveRunIds === undefined &&
@@ -1648,7 +1682,7 @@ export function deriveMessagesTimelineRows(input: {
   );
   const activeWorkPlacementEntryId = latestVisibleToolEntry?.id;
   const activeWorkRow =
-    activeWorkAnchor && latestVisibleToolEntry && !latestToolFailed
+    activeWorkAnchor && currentActivityEntry && !latestToolFailed
       ? (() => {
           const groupId = workGroupId(activeWorkAnchor.id);
           return {
@@ -1660,8 +1694,21 @@ export function deriveMessagesTimelineRows(input: {
                   ? LIVE_ACTIVITY_ROW_ID
                   : `work-live:${activeWorkAnchor.id}`,
             createdAt: activeWorkAnchor.createdAt,
-            entry: (latestRunningToolEntry ?? latestVisibleToolEntry).entry,
+            entry: currentActivityEntry.entry,
             groupedEntries: visibleActiveToolEntries.map((entry) => entry.entry),
+            summaryEntries: timelineEntries
+              .slice(activeTurnHeaderIndex)
+              .flatMap((entry) =>
+                entry.kind === "work" &&
+                runIdIsActiveResponse(entry.entry.runId) &&
+                workLogEntryIsToolLike(entry.entry) &&
+                entry.entry.itemType !== "reasoning" &&
+                entry.entry.itemType !== "approval_request" &&
+                entry.entry.itemType !== "user_input_request" &&
+                workEntryIsVisibleInGroup(entry.entry, true)
+                  ? [entry.entry]
+                  : [],
+              ),
             groupId,
             expanded: input.expandedWorkGroupIds?.has(groupId) ?? false,
             active: latestToolKeepsActivityLive,
@@ -1784,10 +1831,6 @@ export function deriveMessagesTimelineRows(input: {
       appendWorkingRow();
     }
 
-    if (timelineEntry.id === activeWorkPlacementEntryId) {
-      appendActiveWorkRows();
-    }
-
     // A stopped compaction's own divider already says it stopped.
     if (
       timelineEntry.kind === "event" &&
@@ -1828,6 +1871,10 @@ export function deriveMessagesTimelineRows(input: {
             ? !input.collapsedLiveRunIds.has(turnFold.runId)
             : (input.expandedRunIds?.has(turnFold.runId) ?? false),
       });
+    }
+
+    if (timelineEntry.id === activeWorkPlacementEntryId) {
+      appendActiveWorkRows();
     }
 
     if (collapsedEntryIds.has(timelineEntry.id)) {
@@ -1969,6 +2016,7 @@ export function deriveMessagesTimelineRows(input: {
             createdAt: timelineEntry.createdAt,
             entry: latestActiveToolEntry,
             groupedEntries: visibleGroupedEntries,
+            summaryEntries: visibleGroupedEntries,
             groupId,
             expanded,
             active: true,
@@ -2608,6 +2656,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.expanded === bw.expanded &&
         a.active === bw.active &&
         Equal.equals(a.entry, bw.entry) &&
+        Equal.equals(a.summaryEntries, bw.summaryEntries) &&
         Equal.equals(a.groupedEntries, bw.groupedEntries)
       );
     }

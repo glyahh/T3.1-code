@@ -222,15 +222,25 @@ const ANTIGRAVITY_CLIENT_READ_TITLES = new Set([
 ]);
 
 function antigravityClientReadPath(update: {
+  readonly kind?: string | null;
   readonly title?: string | null;
   readonly locations?: ReadonlyArray<{ readonly path: string }> | null;
   readonly rawInput?: unknown;
 }): string | undefined {
-  if (!update.title || !ANTIGRAVITY_CLIENT_READ_TITLES.has(update.title)) return undefined;
+  if (
+    !update.title ||
+    (!ANTIGRAVITY_CLIENT_READ_TITLES.has(update.title) &&
+      !(update.kind === "read" && /^Read(?:\s|$)/.test(update.title)))
+  )
+    return undefined;
+  const input = Predicate.isObject(update.rawInput) ? update.rawInput : undefined;
   const target =
-    update.locations?.[0]?.path ??
-    (Predicate.isObject(update.rawInput) ? update.rawInput.absolute_path : undefined);
-  return typeof target === "string" && target ? target : undefined;
+    update.locations?.[0]?.path ?? input?.absolute_path ?? input?.file_path ?? input?.path;
+  return typeof target === "string" && target ? normalizeReadPath(target) : undefined;
+}
+
+function normalizeReadPath(path: string): string {
+  return /^[a-z]:[\\/]/i.test(path) ? path.replace(/\\/g, "/").toLowerCase() : path;
 }
 
 /**
@@ -256,6 +266,7 @@ export function makeAntigravityReadRepair() {
      * Returns the call a served read completes, so T3 can report it without waiting.
      */
     attempted: (path: string, served: boolean) => {
+      path = normalizeReadPath(path);
       const outcome = served ? "served" : "refused";
       for (const [toolCallId, read] of openReads) {
         if (read.path !== path || read.outcome !== undefined) continue;
