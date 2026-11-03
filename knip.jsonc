@@ -33,6 +33,8 @@
         "setup-worktree.ts",
         "sign-macos.ts",
         "smoke-desktop-app.ts",
+        // CI invokes this trusted entry from a separate checkout.
+        "upstream-verify.mjs",
         "verify-windows-desktop-artifact.ts",
       ],
       "ignoreDependencies": ["agent-device", "esbuild"],

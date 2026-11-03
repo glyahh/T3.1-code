@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import * as NodeCrypto from "node:crypto";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodeURL from "node:url";
 
 export const stableReleases = (releases) =>
   releases
@@ -17,7 +17,7 @@ export const stableReleases = (releases) =>
         .reduce((order, n, i) => order || n - Number(b.tag_name.slice(1).split(".")[i]), 0),
     );
 
-export const digest = (value) => createHash("sha256").update(value).digest("hex");
+export const digest = (value) => NodeCrypto.createHash("sha256").update(value).digest("hex");
 export const requestKey = (upstreamSha, personalSha, policyHash) =>
   digest([upstreamSha, personalSha, policyHash].join(":"));
 export const evidenceComplete = (report, required, base, head) =>
@@ -32,7 +32,10 @@ export const evidenceComplete = (report, required, base, head) =>
   );
 
 const git = (...args) =>
-  execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  NodeChildProcess.execFileSync("git", args, {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
 const ancestor = (a, b) => {
   try {
     git("merge-base", "--is-ancestor", a, b);
@@ -50,12 +53,14 @@ export const parseRequest = (body = "") => {
 };
 
 async function main() {
-  const policyText = readFileSync(".github/upstream/policy.json", "utf8");
+  const policyText = NodeFS.readFileSync(".github/upstream/policy.json", "utf8");
   const policy = JSON.parse(policyText);
   if (process.env.GITHUB_REPOSITORY !== policy.repository)
     throw new Error("Repository does not match trusted policy");
   const policyHash = digest(policyText);
   const mode = process.env.SYNC_MODE || "scan";
+  const executor = process.env.SYNC_EXECUTOR || "codex-cloud";
+  if (!["codex-cloud", "work-cloud"].includes(executor)) throw new Error("Unknown cloud executor");
   const token = process.env.GH_TOKEN;
   if (!token) throw new Error("Missing GitHub token");
   const api = async (path, method = "GET", body, authenticated = true) => {
@@ -110,6 +115,20 @@ async function main() {
       return;
     }
     const comments = await list(`${repo}/issues/${active.number}/comments`);
+    if (executor === "work-cloud") {
+      if (
+        !comments.some(
+          (comment) =>
+            comment.user.login === process.env.SYNC_OWNER &&
+            comment.body.includes(`<!-- t3-work-cloud:${request.key} -->`),
+        )
+      ) {
+        await api(`${repo}/issues/${active.number}/comments`, "POST", {
+          body: task(request, policy, active.number, 1, executor),
+        });
+      }
+      return;
+    }
     const rounds = comments.filter(
       (comment) =>
         comment.body.startsWith("@codex ") && comment.user.login === process.env.SYNC_OWNER,
@@ -139,7 +158,7 @@ async function main() {
       if (rounds.length >= policy.maxRounds)
         throw new Error("Automatic round limit reached; maintainer decision required");
       await api(`${repo}/issues/${active.number}/comments`, "POST", {
-        body: task(request, policy, active.number, rounds.length + 1),
+        body: task(request, policy, active.number, rounds.length + 1, executor),
       });
     } else if (timedOut && !comments.some((c) => c.body.includes(`<!-- timeout:${last.id} -->`))) {
       await api(`${repo}/issues/${active.number}/comments`, "POST", {
@@ -218,18 +237,25 @@ async function main() {
       body,
     });
     await api(`${repo}/issues/${pr.number}/comments`, "POST", {
-      body: task(request, policy, pr.number, 1),
+      body: task(request, policy, pr.number, 1, executor),
     });
     return;
   }
-  writeFileSync(process.env.GITHUB_STEP_SUMMARY || "/dev/stdout", "没有需要创建的正式版本候选。\n");
+  NodeFS.writeFileSync(
+    process.env.GITHUB_STEP_SUMMARY || "/dev/stdout",
+    "没有需要创建的正式版本候选。\n",
+  );
 }
 
-function task(request, policy, number, round) {
+export function task(request, policy, number, round, executor = "codex-cloud") {
+  if (executor === "work-cloud") {
+    return `<!-- t3-work-cloud:${request.key} -->\nPR #${number} 已交付官方 Work 云端自动执行器。固定个人基线 ${request.personalSha}、官方提交 ${request.upstreamSha}、策略 ${request.policyHash}。等待隔离适配与验证；正式合并仍由维护者决定。`;
+  }
+  if (executor !== "codex-cloud") throw new Error("Unknown cloud executor");
   return `@codex 请完成本仓库 PR #${number} 的上游同步任务（第 ${round}/${policy.maxRounds} 轮）。从个人基线 ${request.personalSha} 读取并遵守 .github/upstream/instructions.md 和 policy.json；官方固定提交 ${request.upstreamSha}，策略哈希 ${request.policyHash}。${request.rolledBack ? "该版本曾被回滚，必须依据实际代码树重新评估并恢复所需变化，不能仅检查祖先关系。" : ""}${request.canary ? "这是接入金丝雀：检查保护规则、运行控制器核心测试并在候选添加可验证的回写，不执行正式升级。" : "先阅读所有已关闭同步 PR 的拒绝理由和本 PR 上下文，分析后完整合并并适配个人功能。"}将修改推回本分支，报告证据及缺失项。不得修改门禁或合并 PR。`;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (process.argv[1] && NodeURL.fileURLToPath(import.meta.url) === process.argv[1]) {
   main().catch((error) => {
     console.error(error.message);
     process.exitCode = 1;
