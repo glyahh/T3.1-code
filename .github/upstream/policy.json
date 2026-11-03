@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "upstream": "pingdotgg/t3code",
+  "repository": "glyahh/t3code",
+  "personalBranch": "codex/personal-main",
+  "candidatePrefix": "codex/upstream/",
+  "maxRounds": 2,
+  "taskTimeoutMinutes": 120,
+  "features": [
+    {
+      "id": "chinese-settings",
+      "paths": ["apps/web/src/components/settings/"],
+      "preserve": "中文设置、搜索及设置入口可用"
+    },
+    {
+      "id": "timeline",
+      "paths": ["apps/web/src/components/chat/", "packages/client-runtime/src/work-log/"],
+      "preserve": "消息、思考和工具活动不丢失、不重复，滚动锚点与跟随符合当前行为"
+    },
+    {
+      "id": "previews",
+      "paths": [
+        "apps/web/src/components/ChatMarkdown.tsx",
+        "apps/web/src/components/media/",
+        "apps/web/src/components/ui/dialog.tsx"
+      ],
+      "preserve": "图片、视频、HTML、Mermaid及内容预览支持打开、关闭和恢复"
+    },
+    {
+      "id": "antigravity",
+      "paths": [
+        "apps/server/src/provider/",
+        "apps/server/src/orchestration-v2/",
+        "packages/provider-acp/"
+      ],
+      "preserve": "首字响应、会话恢复、停止、审批和重连不退化"
+    },
+    {
+      "id": "custom-update",
+      "paths": ["apps/desktop/src/updates/"],
+      "preserve": "定制安装不被官方自动更新覆盖"
+    },
+    {
+      "id": "shared-contracts",
+      "paths": [
+        "packages/contracts/",
+        "packages/client-runtime/",
+        "apps/mobile/",
+        "apps/server/src/vcs/",
+        "apps/web/src/state/",
+        "apps/web/src/appInit.tsx"
+      ],
+      "preserve": "检查所有受影响客户端、提供方及本地、远程、隧道连接"
+    }
+  ],
+  "requiredEvidence": [
+    "unit",
+    "integration",
+    "e2e",
+    "smoke",
+    "regression",
+    "api",
+    "contract",
+    "performance",
+    "load",
+    "stress",
+    "security",
+    "compatibility",
+    "fault",
+    "chaos",
+    "rollout",
+    "canary",
+    "ab",
+    "uat"
+  ],
+  "streamingAcceptance": {
+    "localEventToDisplayP95Ms": 200,
+    "sessions": [1, 4, 8],
+    "updatesPerSessionPerSecond": 50,
+    "loadMinutesPerCase": 15,
+    "combinedFaultMinutes": 30,
+    "rolloutTurns": 20,
+    "firstProviderCanaryTurns": 5,
+    "realCallsPerAvailableProvider": 3,
+    "abSamplesPerVersion": 20,
+    "maximumLocalLatencyRegressionPercent": 10
+  },
+  "cloudUiToolsAllowed": true,
+  "verification": [],
+  "retainCoreRegressionTests": true,
+  "automaticMerge": false,
+  "automaticInstall": false,
+  "automaticPublish": false
+}

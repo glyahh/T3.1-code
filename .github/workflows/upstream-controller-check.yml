@@ -1,0 +1,20 @@
+name: Upstream Controller Checks
+on:
+  push:
+    branches: [codex/personal-main, codex/upstream-workflow-setup]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  controller:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - run: node --test .github/upstream/controller.test.mjs
+      - run: node --check scripts/upstream-sync.mjs
+      - run: node --check scripts/upstream-verify.mjs
