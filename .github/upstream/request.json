@@ -6,5 +6,9 @@
   "tag": "v0.1.6",
   "releaseUrl": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.6",
   "canary": true,
-  "rolledBack": false
+  "rolledBack": false,
+  "cloudExecution": {
+    "executor": "work-cloud",
+    "controllerTests": "passed"
+  }
 }
