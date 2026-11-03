@@ -58,11 +58,11 @@ async function main() {
   const mode = process.env.SYNC_MODE || "scan";
   const token = process.env.GH_TOKEN;
   if (!token) throw new Error("Missing GitHub token");
-  const api = async (path, method = "GET", body) => {
+  const api = async (path, method = "GET", body, authenticated = true) => {
     const response = await fetch(`https://api.github.com/${path}`, {
       method,
       headers: {
-        Authorization: `Bearer ${token}`,
+        ...(authenticated ? { Authorization: `Bearer ${token}` } : {}),
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
         "Content-Type": "application/json",
@@ -117,7 +117,13 @@ async function main() {
     const last = rounds.at(-1);
     const timedOut =
       last && Date.now() - Date.parse(last.created_at) > policy.taskTimeoutMinutes * 60_000;
-    const checks = await api(`${repo}/commits/${active.head.sha}/check-runs`);
+    // Public check results do not need additional permissions on the task token.
+    const checks = await api(
+      `${repo}/commits/${active.head.sha}/check-runs`,
+      "GET",
+      undefined,
+      false,
+    );
     const retryFailed =
       !request.canary &&
       active.head.sha !== request.seedSha &&
@@ -197,7 +203,8 @@ async function main() {
     const ref = await api(`${repo}/git/matching-refs/heads/${branch}`);
     if (!ref.some((item) => item.ref === `refs/heads/${branch}`))
       await api(`${repo}/git/refs`, "POST", { ref: `refs/heads/${branch}`, sha: commit.sha });
-    request.seedSha = commit.sha;
+    request.seedSha =
+      ref.find((item) => item.ref === `refs/heads/${branch}`)?.object.sha || commit.sha;
     const common = git("merge-base", personalSha, upstreamSha);
     const localFiles = git("diff", "--name-only", common, personalSha);
     const officialFiles = git("diff", "--name-only", common, upstreamSha);
