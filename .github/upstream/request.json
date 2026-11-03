@@ -1,0 +1,14 @@
+{
+  "key": "8a044393170bfd631c7733ad020f399daead31f8364f30306ece17fff30ce692",
+  "upstreamSha": "2359643cffa6ba9ee84d6f2694b935de54a8013e",
+  "personalSha": "a5887f68174dcd788e8c964680e8ef629310391c",
+  "policyHash": "580bf4ea058492bee68270cb64b1bf40ee19329e17e2b336e962f9a7014932b0",
+  "tag": "v0.1.6",
+  "releaseUrl": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.6",
+  "canary": true,
+  "rolledBack": false,
+  "cloudExecution": {
+    "executor": "work-cloud",
+    "controllerTests": "passed"
+  }
+}
