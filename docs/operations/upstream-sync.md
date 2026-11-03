@@ -2,6 +2,10 @@
 
 此工作流由 GitHub 管理候选，Codex Cloud 通过订阅执行修改，GitHub 执行独立验证。本机无需构建。正式合并、安装和发布均由维护者决定。
 
+新版执行路径使用官方 Work Cloud 定时任务直接执行代码，通过 GitHub 连接器回写候选，共享 ChatGPT/Codex 订阅额度。仓库变量 `UPSTREAM_SYNC_EXECUTOR=work-cloud` 让控制器只发布交接标记，不调用旧修改入口；独立云端定时任务遵循默认分支固定版本的 `.github/upstream/worker.md`，定期消费候选。先完成云端执行、回写及独立验证金丝雀，再开启正式调度。
+
+`codex-cloud` 保留旧评论兼容路径。接入实测发现已发布的新版环境仍可能被旧入口报为缺少环境；参见 [OpenAI 问题 #20093](https://github.com/openai/codex/issues/20093)。不能把自动审查成功当成修改任务启动成功，也不能导出订阅登录缓存绕过此问题。
+
 ## 首次接入
 
 1. 将个人功能及同步代码放入 `codex/personal-main`。将控制工作流、脚本和 `.github/upstream/` 同步到默认分支；无需改变默认分支的产品代码。定时任务只从默认分支运行。

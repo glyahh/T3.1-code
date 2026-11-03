@@ -5,7 +5,23 @@ import {
   parseRequest,
   requestKey,
   stableReleases,
+  task,
 } from "../../scripts/upstream-sync.mjs";
+
+test("cloud dispatch never invokes the legacy bot for Work Cloud", () => {
+  const request = {
+    key: "request",
+    personalSha: "personal",
+    upstreamSha: "upstream",
+    policyHash: "policy",
+  };
+  const policy = { maxRounds: 2 };
+  assert.equal(task(request, policy, 2, 1).startsWith("@codex "), true);
+  const handoff = task(request, policy, 2, 1, "work-cloud");
+  assert.equal(handoff.includes("@codex"), false);
+  assert.equal(handoff.startsWith("<!-- t3-work-cloud:request -->"), true);
+  assert.throws(() => task(request, policy, 2, 1, "unknown"), /Unknown cloud executor/);
+});
 
 test("stable queue rejects previews and orders numeric versions", () => {
   const release = (tag_name, extra = {}) => ({ tag_name, ...extra });
