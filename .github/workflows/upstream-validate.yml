@@ -1,0 +1,51 @@
+name: Upstream Candidate Validation
+on:
+  pull_request_target:
+    branches: [codex/personal-main]
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions:
+  contents: read
+concurrency:
+  group: upstream-validation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    if: github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'codex/upstream/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Fetch pinned public sources without credentials
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          for directory in control candidate; do
+            git init "$directory"
+            git -C "$directory" remote add origin https://github.com/glyahh/t3code.git
+            git -C "$directory" sparse-checkout set --no-cone '/*' '!/.repos/'
+          done
+          git -C control fetch origin "$BASE_SHA"
+          git -C control checkout --detach FETCH_HEAD
+          git -C candidate fetch origin "$HEAD_SHA"
+          git -C candidate checkout --detach FETCH_HEAD
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
+        with:
+          node-version-file: candidate/package.json
+          run-install: false
+          cache: false
+      - name: Install candidate dependencies without credentials
+        working-directory: candidate
+        run: vp install --frozen-lockfile
+      - name: Verify pinned candidate using trusted controller
+        working-directory: candidate
+        env:
+          TRUSTED_DIRECTORY: ${{ github.workspace }}/control
+          EVIDENCE_DIRECTORY: ${{ runner.temp }}/upstream-evidence
+        run: node ../control/scripts/upstream-verify.mjs
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: upstream-evidence-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/upstream-evidence
+          if-no-files-found: error
+          retention-days: 90

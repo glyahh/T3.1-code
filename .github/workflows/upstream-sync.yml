@@ -1,0 +1,42 @@
+name: Upstream Sync
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [scan, canary, retry]
+        default: scan
+        description: 正式版本检查、接入金丝雀或第二轮修复
+permissions:
+  contents: read
+concurrency:
+  group: upstream-sync-controller
+  cancel-in-progress: false
+jobs:
+  controller:
+    if: github.repository == 'glyahh/t3code' && (github.event_name == 'workflow_dispatch' || vars.UPSTREAM_SYNC_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Fetch trusted default branch without credentials
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git init .
+          git remote add origin https://github.com/glyahh/t3code.git
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git fetch origin "$DEFAULT_BRANCH"
+          git checkout --detach FETCH_HEAD
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Controller regression tests
+        run: node --test .github/upstream/controller.test.mjs
+      - name: Discover and request Codex Cloud
+        env:
+          GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN }}
+          SYNC_OWNER: glyahh
+          SYNC_MODE: ${{ inputs.mode || 'scan' }}
+        run: node scripts/upstream-sync.mjs
