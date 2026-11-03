@@ -1,19 +1,22 @@
-import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 import { digest, parseRequest } from "./upstream-sync.mjs";
 
 const trusted = process.env.TRUSTED_DIRECTORY;
 const output = process.env.EVIDENCE_DIRECTORY;
 if (!trusted || !output)
   throw new Error("Trusted control and external evidence directories are required");
-mkdirSync(output, { recursive: true });
-const policyText = readFileSync(resolve(trusted, ".github/upstream/policy.json"), "utf8");
+NodeFS.mkdirSync(output, { recursive: true });
+const policyText = NodeFS.readFileSync(
+  NodePath.resolve(trusted, ".github/upstream/policy.json"),
+  "utf8",
+);
 const policy = JSON.parse(policyText);
-const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
+const event = JSON.parse(NodeFS.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
 const pr = event.pull_request;
 const request = parseRequest(pr?.body);
-const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
+const git = (...args) => NodeChildProcess.execFileSync("git", args, { encoding: "utf8" }).trim();
 const headSha = git("rev-parse", "HEAD");
 const baseSha = pr?.base.sha;
 const report = {
@@ -30,8 +33,15 @@ const report = {
   ),
 };
 const check = (name, command, args) => {
-  const result = spawnSync(command, args, { encoding: "utf8", shell: false, timeout: 1_200_000 });
-  writeFileSync(resolve(output, `${name}.log`), `${result.stdout || ""}\n${result.stderr || ""}`);
+  const result = NodeChildProcess.spawnSync(command, args, {
+    encoding: "utf8",
+    shell: false,
+    timeout: 1_200_000,
+  });
+  NodeFS.writeFileSync(
+    NodePath.resolve(output, `${name}.log`),
+    `${result.stdout || ""}\n${result.stderr || ""}`,
+  );
   const passed = result.status === 0 && !result.error;
   report.checks.push({
     name,
@@ -73,7 +83,7 @@ try {
   if (request.canary) {
     check("controller", "node", [
       "--test",
-      resolve(trusted, ".github/upstream/controller.test.mjs"),
+      NodePath.resolve(trusted, ".github/upstream/controller.test.mjs"),
     ]);
     report.connection = "云端回写候选已进入独立验证；请审阅 Codex 任务链接后再启用定时";
   } else {
@@ -105,7 +115,10 @@ try {
 } catch (error) {
   report.error = error.message;
 } finally {
-  writeFileSync(resolve(output, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
+  NodeFS.writeFileSync(
+    NodePath.resolve(output, "report.json"),
+    `${JSON.stringify(report, null, 2)}\n`,
+  );
   const lines = [
     "## 上游同步验证",
     `个人基线：${baseSha}`,
@@ -116,9 +129,9 @@ try {
     ),
     report.error || "实际客户端、多平台、性能及人工验收尚未齐备，保持草稿。",
   ];
-  writeFileSync(resolve(output, "report.md"), `${lines.join("\n\n")}\n`);
+  NodeFS.writeFileSync(NodePath.resolve(output, "report.md"), `${lines.join("\n\n")}\n`);
   if (process.env.GITHUB_STEP_SUMMARY)
-    writeFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n\n"));
+    NodeFS.writeFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n\n"));
   process.exitCode =
     report.error ||
     request?.canary ||
