@@ -1,3 +1,4 @@
+import { ContentPreview } from "./ContentPreview";
 import { CodeIcon, WorkflowIcon } from "lucide-react";
 import { Suspense, use, useState, type ReactNode } from "react";
 
@@ -76,6 +77,8 @@ export function MarkdownMermaidCodeBlock({
             </pre>
           ) : null}
         </RenderErrorBoundary>
+      ) : isStreaming ? (
+        <ContentPreview disabled>{children}</ContentPreview>
       ) : (
         children
       )}

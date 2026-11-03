@@ -1,3 +1,4 @@
+import { ContentPreviewPinContext } from "./ContentPreview";
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
 import { type RunId } from "@t3tools/contracts";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
@@ -35,7 +36,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
   const messageText = text || (row.message.streaming ? "" : "(empty response)");
 
   return (
-    <>
+    <ContentPreviewPinContext value={(open) => ctx.onAppFullscreenChange(row.id, open)}>
       <div className="relative min-w-0 px-1 py-0.5">
         <MessageAuthorHeading>T3 Code</MessageAuthorHeading>
         <div data-thread-find-text="true" className="agent-process-prose">
@@ -78,7 +79,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
           />
         ) : null}
       </div>
-    </>
+    </ContentPreviewPinContext>
   );
 }
 

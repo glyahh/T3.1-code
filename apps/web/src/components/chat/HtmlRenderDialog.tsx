@@ -17,7 +17,7 @@ export function HtmlRenderDialog(props: {
   return (
     <Dialog open onOpenChange={(open) => !open && props.onClose()}>
       <DialogPopup
-        variant="media"
+        variant="content-preview"
         showCloseButton={false}
         bottomStickOnMobile={false}
         className="row-start-1"
@@ -30,12 +30,12 @@ export function HtmlRenderDialog(props: {
             aria-label="Close"
             size="icon-xs"
             variant="media-close"
-            className="absolute right-0 -top-10 z-20"
+            className="absolute right-2 top-2 z-20"
             onClick={props.onClose}
           >
             <XIcon />
           </Button>
-          <div className="h-[min(86vh,calc(100vh-160px))] overflow-auto overscroll-contain rounded-lg bg-background p-4 shadow-2xl ring-1 ring-border/70 [container-type:size]">
+          <div className="h-[min(86vh,calc(100vh-160px))] overflow-auto overscroll-contain rounded-lg p-4 pt-12 shadow-2xl ring-1 ring-border/70 [container-type:size]">
             <div className="h-[100cqh] w-[100cqw]" style={{ zoom }}>
               <HtmlRenderDocument
                 src={props.src}
@@ -45,7 +45,7 @@ export function HtmlRenderDialog(props: {
               />
             </div>
           </div>
-          <div className="mt-2 flex min-w-0 items-center justify-center gap-3 text-xs text-white/80">
+          <div className="mt-2 flex min-w-0 items-center justify-center gap-3 text-xs text-muted-foreground">
             <span className="truncate">{props.title}</span>
             <div className="flex shrink-0 items-center gap-1">
               <Button

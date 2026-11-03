@@ -1,3 +1,4 @@
+import { ContentPreviewContext } from "./ContentPreview";
 import { ChevronRightIcon } from "lucide-react";
 import {
   Children,
@@ -17,7 +18,8 @@ export function MarkdownDetails({
 }: Pick<ComponentProps<"details">, "children" | "open">) {
   const [isOpen, setIsOpen] = useState(open);
   const searching = use(MarkdownFindContext);
-  const expanded = isOpen;
+  const inPreview = use(ContentPreviewContext);
+  const expanded = inPreview || isOpen;
   const revealForFind = () => setIsOpen(true);
   // Base UI only listens for `beforematch` on a panel mounted at its first
   // render; a closed panel mounts later, when find starts, so listen here.

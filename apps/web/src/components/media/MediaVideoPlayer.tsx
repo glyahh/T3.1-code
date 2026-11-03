@@ -1,6 +1,8 @@
+import { ContentPreview, ContentPreviewContext } from "../chat/ContentPreview";
+import { use, useRef } from "react";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
-import { PlayIcon, RotateCwIcon, TriangleAlertIcon } from "lucide-react";
+import { RotateCwIcon, TriangleAlertIcon } from "lucide-react";
 import { useState, type CSSProperties } from "react";
 
 import { observeIntersection } from "../../lib/observeIntersection";
@@ -11,6 +13,7 @@ import { OpenMediaLink } from "./OpenMediaLink";
 import { MediaActions, type MediaActionSource } from "./MediaActions";
 
 interface MediaVideoPlayerProps {
+  readonly initialTime?: number;
   readonly src: string | null;
   readonly label: string;
   readonly sourceFailed?: boolean | undefined;
@@ -29,6 +32,7 @@ interface MediaVideoPlayerProps {
 }
 
 export function MediaVideoPlayer({
+  initialTime = 0,
   src: latestSrc,
   label,
   sourceFailed = false,
@@ -45,6 +49,8 @@ export function MediaVideoPlayer({
   onRetry,
   actionsSource,
 }: MediaVideoPlayerProps) {
+  const insidePreview = use(ContentPreviewContext);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const [playbackSource, setPlaybackSource] = useState<{
     src: string;
     revision: string | null;
@@ -73,6 +79,7 @@ export function MediaVideoPlayer({
 
   // Retry and failure remount the element, so its listeners live and die with it.
   const attachVideo = (video: HTMLVideoElement) => {
+    videoRef.current = video;
     const pauseWhenHidden = () => {
       // Native fullscreen can hide the inline page while this video is still visible.
       const fullscreen =
@@ -175,6 +182,7 @@ export function MediaVideoPlayer({
           style={style}
           onLoadedMetadata={(event) => {
             prepareVideoFirstFrame(event.currentTarget);
+            if (initialTime > 0) event.currentTarget.currentTime = initialTime;
             if (sourceRevision !== null) setPlaybackSource({ src, revision: sourceRevision });
           }}
           onPlay={() => {
@@ -197,19 +205,39 @@ export function MediaVideoPlayer({
           style={style}
         />
       )}
-      {onOpen ? (
-        <button
-          type="button"
-          aria-label={label ? `Play ${label}` : "Play video"}
-          onClick={onOpen}
-          className="absolute inset-0 flex cursor-pointer items-center justify-center rounded-lg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
-        >
-          <span className="flex size-8 items-center justify-center rounded-full bg-black/50 text-white">
-            <PlayIcon aria-hidden className="size-4 fill-current" />
-          </span>
-        </button>
-      ) : null}
     </span>
   );
-  return actionsSource ? <MediaActions source={actionsSource}>{player}</MediaActions> : player;
+  const media = actionsSource ? (
+    <MediaActions source={actionsSource}>{player}</MediaActions>
+  ) : (
+    player
+  );
+  if (insidePreview) return media;
+  return (
+    <ContentPreview
+      disabled={src === null || failed === true}
+      onExpand={onOpen}
+      // oxlint-disable-next-line react/no-unstable-nested-components -- this factory runs on the expand gesture to capture playback time, never as a component
+      preview={() => {
+        const video = videoRef.current;
+        const time = video?.currentTime ?? 0;
+        video?.pause();
+        return (
+          <MediaVideoPlayer
+            src={src}
+            label={label}
+            initialTime={time}
+            originalUrl={originalUrl}
+            preload="metadata"
+            className="block max-w-full"
+            videoClassName="max-h-[70dvh] w-full"
+            onRetry={onRetry}
+            actionsSource={actionsSource}
+          />
+        );
+      }}
+    >
+      {media}
+    </ContentPreview>
+  );
 }

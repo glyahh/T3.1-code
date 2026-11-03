@@ -1,6 +1,7 @@
+import { ContentPreview } from "./ContentPreview";
 import DOMPurify from "dompurify";
 import type { DiagramType, MathResolver } from "pele/lazy";
-import { use, useState } from "react";
+import { use, useRef, useState } from "react";
 
 import { serializeCodeBlockToMarkdown } from "../../markdown-clipboard";
 import { Button } from "../ui/button";
@@ -226,6 +227,8 @@ export function MermaidDiagram({
   source: string;
   onExpand: (imageUrl: string) => void;
 }) {
+  const diagramRef = useRef<HTMLDivElement>(null);
+  const [renderedSource, setRenderedSource] = useState<string | null>(null);
   const [, setAttempt] = useState(0);
   const [renderError, setRenderError] = useState<string | null>(null);
   const trimmedSource = source.trim();
@@ -244,7 +247,10 @@ export function MermaidDiagram({
       // Keep the author's direction; a wide diagram scales down to fit instead of turning vertical.
       autoDirection: false,
       ...(math ? { math, sanitize: sanitizeMathDiagramSvg } : { sanitize: sanitizeDiagramSvg }),
-      onRender: () => setRenderError(null),
+      onRender: () => {
+        setRenderError(null);
+        setRenderedSource(trimmedSource);
+      },
       onError: (error) =>
         setRenderError(
           error instanceof Error ? error.message : "The diagram could not be rendered.",
@@ -274,18 +280,19 @@ export function MermaidDiagram({
       data-markdown-copy={serializeCodeBlockToMarkdown(source, "mermaid")}
     >
       {renderError ? <DiagramError message={renderError} source={source} /> : null}
-      <button
-        type="button"
-        aria-label="Expand diagram"
-        hidden={renderError !== null}
-        className="block w-full cursor-zoom-in rounded-md focus-visible:outline-2 focus-visible:outline-ring"
-        onClick={(event) => {
-          const svg = event.currentTarget.querySelector("svg");
+      <ContentPreview
+        disabled={
+          renderError !== null || load.status !== "loaded" || renderedSource !== trimmedSource
+        }
+        onExpand={() => {
+          const svg = diagramRef.current?.querySelector("svg");
           if (svg) onExpand(diagramImageUrl(svg));
         }}
       >
-        <span ref={mountDiagram} className="flex w-full justify-center" />
-      </button>
+        <div ref={diagramRef}>
+          <span ref={mountDiagram} className="flex w-full justify-center" />
+        </div>
+      </ContentPreview>
     </div>
   );
 }
