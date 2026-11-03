@@ -1,7 +1,7 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
-import { digest, parseRequest } from "./upstream-sync.mjs";
+import { digest, evidenceComplete, parseRequest } from "./upstream-sync.mjs";
 
 const trusted = process.env.TRUSTED_DIRECTORY;
 const output = process.env.EVIDENCE_DIRECTORY;
@@ -85,7 +85,10 @@ try {
       "--test",
       NodePath.resolve(trusted, ".github/upstream/controller.test.mjs"),
     ]);
-    report.connection = "云端回写候选已进入独立验证；请审阅 Codex 任务链接后再启用定时";
+    report.cloudWriteObserved = headSha !== request.seedSha;
+    report.connection = report.cloudWriteObserved
+      ? "已观察到候选回写；请核对云端任务和当前提交的独立验证证据"
+      : "仅验证了候选请求，尚未观察到云端回写，不能启用正式调度";
   } else {
     git("merge-base", "--is-ancestor", request.upstreamSha, headSha);
     const baselineTests = git("diff", "--name-only", "--diff-filter=D", baseSha, headSha).split(
@@ -136,7 +139,7 @@ try {
     report.error ||
     request?.canary ||
     report.checks.some((item) => item.status !== "passed") ||
-    !policy.requiredEvidence.every((name) => report.evidence[name].status === "passed")
+    !evidenceComplete(report, policy.requiredEvidence, baseSha, headSha)
       ? 1
       : 0;
 }
