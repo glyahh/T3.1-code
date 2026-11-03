@@ -20,15 +20,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          fetch-depth: 0
-          persist-credentials: false
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+      - name: Fetch trusted default branch without credentials
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git init .
+          git remote add origin https://github.com/glyahh/t3code.git
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git fetch origin "$DEFAULT_BRANCH"
+          git checkout --detach FETCH_HEAD
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
