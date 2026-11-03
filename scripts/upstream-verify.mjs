@@ -96,9 +96,8 @@ try {
     );
     if (baselineTests.some((path) => /\.test\.[cm]?[jt]sx?$/.test(path)))
       throw new Error("候选删除了既有测试，必须独立审阅");
-    const vp = process.platform === "win32" ? "vp.exe" : "vp";
-    check("changed", vp, ["run", "check:changed", baseSha]);
-    check("build", vp, ["run", "build:desktop"]);
+    check("changed", "vp", ["run", "check:changed", baseSha]);
+    check("build", "vp", ["run", "build:desktop"]);
     for (const suite of policy.verification) {
       if (!/^[a-z0-9-]+$/.test(suite.name) || !Array.isArray(suite.args))
         throw new Error("Invalid trusted verification suite");
