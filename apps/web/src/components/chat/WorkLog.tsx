@@ -48,13 +48,15 @@ type RowContent = {
   label: ReactNode;
   trailing?: ReactNode;
   wrapLabel?: boolean;
+  activity?: boolean;
 };
 
-function WorkLogLine({ icon, label, trailing, wrapLabel }: RowContent) {
+function WorkLogLine({ icon, label, trailing, wrapLabel, activity }: RowContent) {
   return (
     <div
       className={cn(
-        "flex min-h-6 min-w-0 gap-1.5 text-sm leading-relaxed select-none [&_*]:select-none",
+        "flex min-h-6 min-w-0 gap-1.5 leading-relaxed select-none [&_*]:select-none",
+        activity ? "text-base" : "text-sm",
         wrapLabel ? "items-start" : "items-center",
       )}
     >
@@ -83,11 +85,11 @@ function WorkLogLine({ icon, label, trailing, wrapLabel }: RowContent) {
 const interactionClassName =
   "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70";
 
-function useRowClassName(interactive: boolean) {
+function useRowClassName(interactive: boolean, activity: boolean) {
   const grouped = use(GroupedRows);
   return cn(
     "group/timeline-row relative w-full min-w-0 rounded-md px-0.5 text-left transition-colors",
-    grouped ? "py-0" : "py-0.5",
+    grouped || activity ? "py-0" : "py-0.5",
     interactive && interactionClassName,
   );
 }
@@ -97,12 +99,19 @@ export function WorkLogButton({
   label,
   trailing,
   wrapLabel = false,
+  activity = false,
   ...buttonProps
 }: RowContent & Omit<ComponentProps<"button">, "className" | "style" | "children">) {
-  const className = useRowClassName(true);
+  const className = useRowClassName(true, activity);
   return (
     <button {...buttonProps} type="button" className={className}>
-      <WorkLogLine icon={icon} label={label} trailing={trailing} wrapLabel={wrapLabel} />
+      <WorkLogLine
+        icon={icon}
+        label={label}
+        trailing={trailing}
+        wrapLabel={wrapLabel}
+        activity={activity}
+      />
     </button>
   );
 }
@@ -113,13 +122,20 @@ export function WorkLogRow({
   label,
   trailing,
   wrapLabel = false,
+  activity = false,
   children,
   ...rowProps
 }: RowContent & Omit<ComponentProps<"div">, "className" | "style">) {
-  const className = useRowClassName(rowProps.onClick !== undefined);
+  const className = useRowClassName(rowProps.onClick !== undefined, activity);
   return (
     <div {...rowProps} className={className}>
-      <WorkLogLine icon={icon} label={label} trailing={trailing} wrapLabel={wrapLabel} />
+      <WorkLogLine
+        icon={icon}
+        label={label}
+        trailing={trailing}
+        wrapLabel={wrapLabel}
+        activity={activity}
+      />
       {children}
     </div>
   );

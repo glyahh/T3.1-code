@@ -110,6 +110,7 @@ const inlineButtonVariants = cva(
         picker:
           "gap-1 text-foreground decoration-from-font underline-offset-4 data-popup-open:underline",
       },
+      decoration: { dotted: "decoration-dotted decoration-1" },
     },
   },
 );
@@ -117,11 +118,12 @@ const inlineButtonVariants = cva(
 export function InlineButton({
   className,
   tone,
+  decoration,
   render,
   ...props
 }: useRender.ComponentProps<"button"> & VariantProps<typeof inlineButtonVariants>) {
   const defaultProps = {
-    className: cn(inlineButtonVariants({ tone }), className),
+    className: cn(inlineButtonVariants({ tone, decoration }), className),
     "data-slot": "inline-button",
     type: render ? undefined : ("button" as const),
   };

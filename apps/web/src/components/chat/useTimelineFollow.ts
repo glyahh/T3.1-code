@@ -4,6 +4,7 @@ import { Debouncer } from "@tanstack/react-pacer";
 import {
   type SetStateAction,
   useLayoutEffect,
+  useInsertionEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -232,6 +233,20 @@ export function useTimelineFollow(input: TimelineFollowInput) {
   };
   // The anchor whose list position LegendList reported ready; until then a
   // newly started run must not re-anchor.
+  const requestedAnchor = useRef<TimelineAnchor>({
+    threadKey: activeThreadKey,
+    messageId: timelineAnchorMessageId,
+  });
+  const isCurrentAnchor = useStableCallback(
+    (messageId: MessageId) =>
+      requestedAnchor.current.threadKey === activeThreadKey &&
+      requestedAnchor.current.messageId === messageId &&
+      readFollow().mode === "following",
+  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- invalidates pending list callbacks when the committed thread or anchor changes
+  useInsertionEffect(() => {
+    requestedAnchor.current = { threadKey: activeThreadKey, messageId: timelineAnchorMessageId };
+  }, [activeThreadKey, timelineAnchorMessageId]);
   const [laidOutAnchor, setLaidOutAnchor] = useState<MessageId | null>(null);
   const anchorPending =
     timelineAnchorMessageId !== null && laidOutAnchor !== timelineAnchorMessageId;
@@ -290,7 +305,18 @@ export function useTimelineFollow(input: TimelineFollowInput) {
   if (!sameRunObservation(runObservation.observation, observedRun)) {
     setObservedRun(runObservation.observation);
     const startedRunAnchor = runObservation.anchorMessageId;
-    if (startedRunAnchor !== null && !anchorPending && timelineLiveFollowEnabled) {
+    if (
+      startedRunAnchor !== null &&
+      (timelineAnchorMessageId === null ||
+        input.timelineEntries.findIndex(
+          (entry) => entry.kind === "message" && entry.message.id === timelineAnchorMessageId,
+        ) <
+          input.timelineEntries.findIndex(
+            (entry) => entry.kind === "message" && entry.message.id === startedRunAnchor,
+          )) &&
+      !anchorPending &&
+      timelineLiveFollowEnabled
+    ) {
       setShowScrollToBottom(false);
       setTimelineAnchor({ threadKey: activeThreadKey, messageId: startedRunAnchor });
     }
@@ -394,11 +420,11 @@ export function useTimelineFollow(input: TimelineFollowInput) {
 
   const onTimelineAnchorReady = (
     messageId: MessageId,
-    anchorIndex: number,
+    _anchorIndex: number,
     offset: number,
     hasSpace: boolean,
   ) => {
-    if (readFollow().mode !== "following") return;
+    if (!isCurrentAnchor(messageId)) return;
     setLaidOutAnchor(messageId);
     const scroll = visitScroll();
     if (scroll.positionedAnchor === messageId && scroll.positionedOffset === offset) {
@@ -416,7 +442,10 @@ export function useTimelineFollow(input: TimelineFollowInput) {
     const releaseHold = viewportRef.current?.holdProgrammaticScroll() ?? (() => {});
     scroll.releaseAnchorScrollHold = releaseHold;
     const isPositioning = () =>
-      scroll.positionedAnchor === messageId && listShowsMessage(legendListRef.current, messageId);
+      visitScrollRef.current === scroll &&
+      scroll.positionedAnchor === messageId &&
+      isCurrentAnchor(messageId) &&
+      listShowsMessage(legendListRef.current, messageId);
     // Releasing is idempotent, so an attempt that is no longer current (the
     // thread switched, the user navigated) always lets go of its own hold.
     const abandon = () => {
@@ -438,10 +467,17 @@ export function useTimelineFollow(input: TimelineFollowInput) {
           }
           return;
         }
+        const index = (list.getState().data as ReadonlyArray<MessagesTimelineRow>).findIndex(
+          (row) => row.kind === "message" && row.message.id === messageId,
+        );
+        if (index < 0) {
+          abandon();
+          return;
+        }
         // LegendList waits for queued layout and the animation before resolving.
         void list
           .scrollToIndex({
-            index: anchorIndex,
+            index,
             animated: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
             viewPosition: 0,
             viewOffset: offset,
@@ -524,6 +560,20 @@ export function useTimelineFollow(input: TimelineFollowInput) {
 
   /** Arms the anchor for a message the user just sent, before its run exists. */
   const anchorNewTurn = (threadKey: string, messageId: MessageId) => {
+    const scroll = visitScroll();
+    stopAnchorPositioning(scroll);
+    scroll.pendingAnchorScrollRestore = null;
+    if (scroll.anchorScrollRestoreFrame !== null) {
+      cancelAnimationFrame(scroll.anchorScrollRestoreFrame);
+      scroll.anchorScrollRestoreFrame = null;
+    }
+    requestedAnchor.current = { threadKey, messageId };
+    const list = legendListRef.current;
+    void list?.scrollToItem({ item: TIMELINE_SCROLL_CANCEL_SENTINEL, animated: false });
+    const node = list?.getScrollableNode();
+    const top = node?.scrollTop;
+    if (node && top !== undefined) node.scrollTop = top;
+
     followStore.dispatch(visit, { type: "followEnd" });
     visitScroll().canShowScrollToBottom = false;
     visitScroll().showScrollDebouncer.cancel();

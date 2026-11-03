@@ -434,7 +434,16 @@ export const make = Effect.gen(function* () {
     Effect.map((appUpdateYmlConfig) => Option.isSome(appUpdateYmlConfig) || config.mockUpdates),
   );
 
+  const customBuild = yield* fileSystem
+    .readFileString(environment.path.join(environment.resourcesPath, "agent-motion-version.json"))
+    .pipe(
+      Effect.as(true),
+      Effect.orElseSucceed(() => false),
+    );
+
   const resolveDisabledReason = Effect.gen(function* () {
+    if (customBuild)
+      return Option.some("Official updates are disabled for this local custom build.");
     const hasFeedConfig = yield* hasUpdateFeedConfig;
     return Option.fromNullishOr(
       getAutoUpdateDisabledReason({

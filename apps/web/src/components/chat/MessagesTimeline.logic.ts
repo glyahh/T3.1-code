@@ -1,3 +1,4 @@
+import { thoughtLabel } from "./thoughtLabel";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import { isLiveSubagentTurnItem } from "@t3tools/client-runtime/state/subagentRuntime";
@@ -1508,7 +1509,6 @@ export function deriveMessagesTimelineRows(input: {
   const bodyOwnsActivity =
     lastContentEntry?.kind === "message" &&
     lastContentEntry.message.role === "assistant" &&
-    lastContentEntry.message.streaming &&
     Boolean(lastContentEntry.message.text.trim());
   const isPendingApproval = (entry: WorkLogEntry) => {
     const item = entry.projectedItem?.item;
@@ -2079,9 +2079,11 @@ export function deriveMessagesTimelineRows(input: {
             hiddenCount: visibleGroupedEntries.length,
             expanded,
             summary:
-              singleEntry !== null && !workLogEntryIsToolLike(singleEntry)
-                ? singleEntry.label
-                : summarizeToolGroup(visibleGroupedEntries, 3).summary,
+              summaryKind === "reasoning"
+                ? thoughtLabel(visibleGroupedEntries)
+                : singleEntry !== null && !workLogEntryIsToolLike(singleEntry)
+                  ? singleEntry.label
+                  : summarizeToolGroup(visibleGroupedEntries, 3).summary,
             summaryKind,
             ...(groupToolSurface ? { toolSurface: groupToolSurface } : {}),
             ...(groupToolIcon ? { toolIcon: groupToolIcon } : {}),

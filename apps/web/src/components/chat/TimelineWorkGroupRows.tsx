@@ -379,7 +379,6 @@ function LiveActivityRow({
         iconName={iconName}
         toolIcon={toolIcon}
         failed={failed}
-        announceFailure={failed}
         active={animated && shimmer}
       />
     </div>
@@ -391,7 +390,6 @@ function LiveActivityContent({
   iconName,
   toolIcon,
   failed = false,
-  announceFailure = false,
   active = false,
   highlighted = false,
 }: {
@@ -399,7 +397,6 @@ function LiveActivityContent({
   iconName: WorkEntryIconName | undefined;
   toolIcon?: ToolActivityIcon | undefined;
   failed?: boolean;
-  announceFailure?: boolean;
   active?: boolean;
   highlighted?: boolean;
 }) {
@@ -408,29 +405,7 @@ function LiveActivityContent({
 
   return (
     <WorkLogRow
-      icon={
-        iconName ? (
-          <span
-            className={cn(
-              "flex size-4 items-center justify-center",
-              failed
-                ? failedToolIconClassName
-                : highlighted
-                  ? "text-foreground"
-                  : "text-agent-activity",
-            )}
-            role={announceFailure ? "img" : undefined}
-            aria-label={announceFailure ? "Tool call failed" : undefined}
-          >
-            <ToolActivityIconView
-              icon={toolIcon}
-              fallbackName={iconName}
-              className="block size-4 shrink-0 stroke-2"
-              muted={!highlighted}
-            />
-          </span>
-        ) : null
-      }
+      activity
       label={<ExecutionStatusLabel label={label} highlighted={highlighted} active={active} />}
       trailing={
         showTrailingFailureMark ? (
@@ -578,19 +553,21 @@ export function WorkGroupTimelineRow({
       <PlanningLabel progressAt={progressAt} />
     );
   return (
-    <div>
+    <div className="flex min-w-0 flex-col gap-2">
       {row.kind !== "thinking" ? (
         <WorkGroupHeader
           label={summary ?? status}
           active={row.kind === "work-live" && !summary}
           iconName={
-            liveSummary
-              ? toolGroupSummaryIconName(toolGroupSummaryKind(summaryTools))
-              : entry
-                ? workEntryIconName(entry)
-                : row.kind === "work-toggle"
-                  ? (row.toolSurface ?? toolGroupSummaryIconName(row.summaryKind))
-                  : "brain"
+            row.kind === "work-live" && !summary
+              ? undefined
+              : liveSummary
+                ? toolGroupSummaryIconName(toolGroupSummaryKind(summaryTools))
+                : entry
+                  ? workEntryIconName(entry)
+                  : row.kind === "work-toggle"
+                    ? (row.toolSurface ?? toolGroupSummaryIconName(row.summaryKind))
+                    : "brain"
           }
           toolIcon={
             liveSummary
@@ -628,7 +605,7 @@ export function WorkGroupTimelineRow({
 function WorkGroupHeader(props: {
   label: ReactNode;
   active?: boolean;
-  iconName: WorkEntryIconName;
+  iconName: WorkEntryIconName | undefined;
   toolIcon?: ToolActivityIcon | undefined;
   failed?: boolean | undefined;
   expanded: boolean;
@@ -638,6 +615,7 @@ function WorkGroupHeader(props: {
 }) {
   return (
     <WorkLogButton
+      activity
       aria-label={
         typeof props.label === "string"
           ? props.failed
@@ -648,19 +626,21 @@ function WorkGroupHeader(props: {
       aria-expanded={props.expanded}
       onClick={props.onToggle}
       icon={
-        <ToolActivityIconView
-          icon={props.toolIcon}
-          fallbackName={props.iconName}
-          className={cn(
-            "size-4 shrink-0 stroke-2",
-            props.failed ? failedToolIconClassName : "text-agent-activity",
-          )}
-          muted={!props.failed}
-        />
+        props.iconName ? (
+          <ToolActivityIconView
+            icon={props.toolIcon}
+            fallbackName={props.iconName}
+            className={cn(
+              "size-4 shrink-0 stroke-2",
+              props.failed ? failedToolIconClassName : "text-agent-activity",
+            )}
+            muted={!props.failed}
+          />
+        ) : null
       }
       label={
         <ExecutionStatusLabel
-          label={props.label}
+          label={<span className="text-base">{props.label}</span>}
           highlighted={false}
           active={props.active === true}
         />

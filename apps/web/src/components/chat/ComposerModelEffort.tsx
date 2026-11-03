@@ -118,11 +118,27 @@ export function describeComposerEffort(
           size === "sm" && "-ms-0.5",
         )}
       >
-        {word !== null ? (
-          <span data-composer-control-label>{word}</span>
-        ) : glyph ? (
-          <EffortGlyph count={glyph.count} filled={glyph.filled} size={size} />
-        ) : null}
+        <span className="relative inline-grid shrink-0 overflow-hidden align-middle">
+          {word !== null && primary ? (
+            <span
+              aria-hidden="true"
+              className="invisible col-start-1 row-start-1 flex h-0 overflow-hidden"
+            >
+              {primary.options.reduce(
+                (longest, option) =>
+                  option.label.length > longest.length ? option.label : longest,
+                word,
+              )}
+            </span>
+          ) : null}
+          <span data-effort-motion className="col-start-1 row-start-1 inline-flex items-center">
+            {word !== null ? (
+              <span data-composer-control-label>{word}</span>
+            ) : glyph ? (
+              <EffortGlyph count={glyph.count} filled={glyph.filled} size={size} />
+            ) : null}
+          </span>
+        </span>
         {glyph && (display.speedLabel === "Fast" || display.speedLabel === "Ultrafast") ? (
           <FastBolt ultra={display.speedLabel === "Ultrafast"} />
         ) : null}

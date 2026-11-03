@@ -157,6 +157,18 @@ export function AppearanceSettingsPanel() {
 
       <SettingsSection id="appearance-interface" title={settingsText("Interface")}>
         <SettingsRow
+          {...searchableSetting("unified-sidebar-background")}
+          control={
+            <Switch
+              checked={settings.unifiedSidebarBackground}
+              onCheckedChange={(checked) =>
+                updateSettings({ unifiedSidebarBackground: Boolean(checked) })
+              }
+              aria-label="统一侧栏与会话背景"
+            />
+          }
+        />
+        <SettingsRow
           {...searchableSetting("setting-appearance-contrast")}
           description={settingsText(
             "Adjust the contrast of colors and borders across the interface.",

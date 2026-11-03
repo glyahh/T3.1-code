@@ -301,6 +301,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "appearance",
   },
   {
+    id: "unified-sidebar-background",
+    title: "统一侧栏与会话背景",
+    to: "/settings/appearance",
+    searchTerms: ["统一 同色 侧栏 背景 sidebar background same color appearance"],
+  },
+  {
     // Prefixed because the slider control already owns the `appearance-contrast` id.
     id: "setting-appearance-contrast",
     title: "Contrast",

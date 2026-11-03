@@ -1,3 +1,4 @@
+import { thoughtLabel } from "./thoughtLabel";
 import { Collapsible, CollapsiblePanel } from "../ui/collapsible";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import { WorkLogDetails, WorkLogRow } from "./WorkLog";
@@ -293,7 +294,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     isReasoning && expanded
       ? workEntry.toolLifecycleStatus === "inProgress"
         ? "Thinking"
-        : "Thought"
+        : thoughtLabel([workEntry])
       : questionHeading || (displayLabel ?? workEntryDisplayLabel(workEntry, workspaceRoot));
   const answerPreview =
     workEntry.questionAnswer && hasQuestionAnswer(workEntry.questionAnswer)

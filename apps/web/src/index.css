@@ -661,7 +661,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   width: max-content;
   max-width: var(--agent-label-width);
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
   white-space: nowrap;
   margin-left: var(--live-activity-focus-width);
 }
@@ -1176,8 +1176,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   /* Keep every sidebar primitive on the same light surface hierarchy, including
      portaled mobile sheets and settings navigation outside the app sidebar. */
   --sidebar: var(--color-zinc-50);
-  --sidebar-foreground: var(--foreground);
-  --sidebar-muted-foreground: var(--muted-foreground);
+  --sidebar-foreground: var(--unified-canvas-foreground);
+  --sidebar-muted-foreground: var(--unified-canvas-muted-foreground);
   --sidebar-control-surface: var(--color-zinc-100);
   --sidebar-row-hover: var(--color-zinc-25);
   --sidebar-row-active: var(--color-white);
@@ -1271,8 +1271,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     --border: rgb(255 255 255 / 8%);
     --input: rgb(255 255 255 / 18%);
     --sidebar: var(--card);
-    --sidebar-foreground: var(--foreground);
-    --sidebar-muted-foreground: var(--muted-foreground);
+    --sidebar-foreground: var(--unified-canvas-foreground);
+    --sidebar-muted-foreground: var(--unified-canvas-muted-foreground);
     --sidebar-control-surface: var(--muted);
     --sidebar-row-hover: color-mix(in srgb, var(--contrast-foreground) 8%, transparent);
     --sidebar-row-active: color-mix(in srgb, var(--contrast-foreground) 11%, transparent);
@@ -2043,6 +2043,10 @@ code {
   text-decoration: none;
 }
 
+.chat-markdown-file-link [data-slot="context-chip-label"] {
+  text-decoration-style: dotted;
+}
+
 /* File links and context chips own their color and focus ring. */
 .chat-markdown a:not(.chat-markdown-file-link, :has([data-slot="context-chip-label"])) {
   color: var(--info-foreground);
@@ -2621,4 +2625,24 @@ code {
   font-size: 1rem;
   font-weight: 500;
   color: var(--foreground);
+}
+
+html:root[data-unified-sidebar-background="true"] {
+  --unified-canvas-background: var(--background);
+  --unified-canvas-foreground: var(--foreground);
+  --unified-canvas-muted-foreground: var(--muted-foreground);
+}
+
+html:root[data-unified-sidebar-background="true"],
+html:root[data-unified-sidebar-background="true"] [data-app-sidebar] {
+  --sidebar: var(--unified-canvas-background);
+  --sidebar-foreground: var(--unified-canvas-foreground);
+  --sidebar-muted-foreground: var(--unified-canvas-muted-foreground);
+  --sidebar-stage-fade: var(--unified-canvas-background);
+}
+
+html:root[data-unified-sidebar-background="true"] [data-app-sidebar].surface-grain,
+html:root[data-unified-sidebar-background="true"] [data-app-sidebar] [data-sidebar="sidebar"] {
+  background-color: var(--unified-canvas-background);
+  background-image: none;
 }

@@ -75,6 +75,9 @@ function startClientAppearance(): void {
     if (previous?.diffColorScheme !== settings.diffColorScheme) {
       root.dataset.diffColorScheme = settings.diffColorScheme;
     }
+    if (previous?.unifiedSidebarBackground !== settings.unifiedSidebarBackground) {
+      root.dataset.unifiedSidebarBackground = String(settings.unifiedSidebarBackground);
+    }
     if (previous?.chatWidth !== settings.chatWidth) {
       root.dataset.chatWidth = settings.chatWidth;
     }
