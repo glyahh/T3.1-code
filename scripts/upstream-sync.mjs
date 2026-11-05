@@ -52,6 +52,8 @@ const git = (...args) => {
     throw new Error(`git ${args.join(" ")}: ${error.message}`, { cause: error });
   }
 };
+export const summarizeChanges = (base, head, directory = ".") =>
+  git("-C", directory, "diff", "--stat=120,100,100", base, head);
 const ancestor = (a, b) => {
   try {
     git("merge-base", "--is-ancestor", a, b);
@@ -228,6 +230,9 @@ async function main() {
     const branch = `${policy.candidatePrefix}${release.tag_name}-${key.slice(0, 10)}${request.canary ? `-canary-${process.env.GITHUB_RUN_ID}` : ""}`;
     const existing = managed.find((pr) => pr.head.ref === branch);
     if (existing) continue;
+    const common = git("merge-base", personalSha, upstreamSha);
+    const localFiles = summarizeChanges(common, personalSha);
+    const officialFiles = summarizeChanges(common, upstreamSha);
     // The durable version pin gives conflict-only updates a PR before Codex runs.
     const file = ".github/upstream/request.json";
     const parent = await api(`${repo}/git/commits/${personalSha}`);
@@ -252,11 +257,8 @@ async function main() {
       await api(`${repo}/git/refs`, "POST", { ref: `refs/heads/${branch}`, sha: commit.sha });
     request.seedSha =
       ref.find((item) => item.ref === `refs/heads/${branch}`)?.object.sha || commit.sha;
-    const common = git("merge-base", personalSha, upstreamSha);
-    const localFiles = git("diff", "--name-only", common, personalSha);
-    const officialFiles = git("diff", "--name-only", common, upstreamSha);
     const encoded = Buffer.from(JSON.stringify(request)).toString("base64");
-    const body = `${marker}${encoded} -->\n官方版本：[${request.tag}](${request.releaseUrl})\n\n个人基线：\`${personalSha}\`\n官方提交：\`${upstreamSha}\`\n策略：\`${policyHash}\`\n\n${request.canary ? "接入金丝雀，不用于正式合并。" : "等待云端分析及独立验证，禁止自动合并。"}\n\n<details><summary>个人差异文件</summary>\n\n\`\`\`text\n${localFiles}\n\`\`\`\n</details>\n<details><summary>官方差异文件</summary>\n\n\`\`\`text\n${officialFiles}\n\`\`\`\n</details>\n\n关闭未合并候选表示暂缓本次版本；后续累计版本仍需重新评估拒绝原因。回滚后给本 PR 标记 upstream-rolled-back。`;
+    const body = `${marker}${encoded} -->\n官方版本：[${request.tag}](${request.releaseUrl})\n\n个人基线：\`${personalSha}\`\n官方提交：\`${upstreamSha}\`\n策略：\`${policyHash}\`\n\n${request.canary ? "接入金丝雀，不用于正式合并。" : "等待云端分析及独立验证，禁止自动合并。"}\n\n<details><summary>个人差异摘要（最多 100 项）</summary>\n\n\`\`\`text\n${localFiles}\n\`\`\`\n[完整比较](https://github.com/${repository}/compare/${common}...${personalSha})\n</details>\n<details><summary>官方差异摘要（最多 100 项）</summary>\n\n\`\`\`text\n${officialFiles}\n\`\`\`\n[完整比较](https://github.com/${policy.upstream}/compare/${common}...${upstreamSha})\n</details>\n\n关闭未合并候选表示暂缓本次版本；后续累计版本仍需重新评估拒绝原因。回滚后给本 PR 标记 upstream-rolled-back。`;
     const pr = await api(`${repo}/pulls`, "POST", {
       title: `${request.canary ? "[接入验证]" : "[上游同步]"} ${release.tag_name}`,
       head: branch,
