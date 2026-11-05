@@ -1,11 +1,16 @@
 import * as NodeAssert from "node:assert/strict";
 import * as NodeTest from "node:test";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import {
   evidenceComplete,
   parseRequest,
   requestKey,
   resolveRepository,
   stableReleases,
+  summarizeChanges,
   task,
 } from "../../scripts/upstream-sync.mjs";
 
@@ -29,6 +34,40 @@ NodeTest.test("repository identity survives a rename and rejects another fork", 
     () => resolveRepository(policy, { ...environment, GITHUB_REPOSITORY: "../another/repo" }),
     /repository name/,
   );
+});
+
+NodeTest.test("large release summaries stay bounded without omitting the total", () => {
+  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-upstream-summary-"));
+  const git = (...args) =>
+    NodeChildProcess.execFileSync(
+      "git",
+      [
+        "-C",
+        directory,
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        ...args,
+      ],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    ).trim();
+  try {
+    git("init", "--quiet");
+    git("commit", "--quiet", "--allow-empty", "-m", "base");
+    const base = git("rev-parse", "HEAD");
+    for (let index = 0; index < 250; index++)
+      NodeFS.writeFileSync(NodePath.join(directory, `file-${index}.txt`), "changed\n");
+    git("add", ".");
+    git("commit", "--quiet", "-m", "release");
+    const summary = summarizeChanges(base, git("rev-parse", "HEAD"), directory);
+    NodeAssert.ok(summary.split("\n").length <= 102);
+    NodeAssert.match(summary, /250 files changed/);
+  } finally {
+    NodeAssert.equal(NodePath.dirname(directory), NodePath.resolve(NodeOS.tmpdir()));
+    NodeAssert.ok(NodePath.basename(directory).startsWith("t3-upstream-summary-"));
+    NodeFS.rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 NodeTest.test("cloud dispatch never invokes the legacy bot for Work Cloud", () => {
