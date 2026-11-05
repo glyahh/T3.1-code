@@ -1,13 +1,29 @@
-import assert from "node:assert/strict";
-import { test } from "node:test";
+import * as NodeAssert from "node:assert/strict";
+import * as NodeTest from "node:test";
 import {
   evidenceComplete,
   parseRequest,
   requestKey,
   stableReleases,
+  task,
 } from "../../scripts/upstream-sync.mjs";
 
-test("stable queue rejects previews and orders numeric versions", () => {
+NodeTest.test("cloud dispatch never invokes the legacy bot for Work Cloud", () => {
+  const request = {
+    key: "request",
+    personalSha: "personal",
+    upstreamSha: "upstream",
+    policyHash: "policy",
+  };
+  const policy = { maxRounds: 2 };
+  NodeAssert.equal(task(request, policy, 2, 1).startsWith("@codex "), true);
+  const handoff = task(request, policy, 2, 1, "work-cloud");
+  NodeAssert.equal(handoff.includes("@codex"), false);
+  NodeAssert.equal(handoff.startsWith("<!-- t3-work-cloud:request -->"), true);
+  NodeAssert.throws(() => task(request, policy, 2, 1, "unknown"), /Unknown cloud executor/);
+});
+
+NodeTest.test("stable queue rejects previews and orders numeric versions", () => {
   const release = (tag_name, extra = {}) => ({ tag_name, ...extra });
   const rows = [
     release("v1.10.0"),
@@ -17,35 +33,35 @@ test("stable queue rejects previews and orders numeric versions", () => {
     release("v1.5.0", { draft: true }),
     release("../../main"),
   ];
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     stableReleases(rows).map((r) => r.tag_name),
     ["v1.2.0", "v1.10.0"],
   );
 });
 
-test("idempotency changes with either SHA or trusted policy", () => {
+NodeTest.test("idempotency changes with either SHA or trusted policy", () => {
   const key = requestKey("upstream", "personal", "policy");
-  assert.equal(key, requestKey("upstream", "personal", "policy"));
+  NodeAssert.equal(key, requestKey("upstream", "personal", "policy"));
   for (const values of [
     ["new", "personal", "policy"],
     ["upstream", "new", "policy"],
     ["upstream", "personal", "new"],
   ])
-    assert.notEqual(key, requestKey(...values));
+    NodeAssert.notEqual(key, requestKey(...values));
 });
 
-test("validation rejects stale, missing, skipped and unsupported evidence", () => {
+NodeTest.test("validation rejects stale, missing, skipped and unsupported evidence", () => {
   const report = {
     baseSha: "base",
     headSha: "head",
     evidence: { e2e: { status: "passed", urls: ["https://github.com/example/evidence"] } },
   };
-  assert.equal(evidenceComplete(report, ["e2e"], "base", "head"), true);
-  assert.equal(evidenceComplete(report, ["e2e"], "other", "head"), false);
-  assert.equal(evidenceComplete(report, ["e2e"], "base", "new"), false);
-  assert.equal(evidenceComplete(report, ["e2e", "uat"], "base", "head"), false);
+  NodeAssert.equal(evidenceComplete(report, ["e2e"], "base", "head"), true);
+  NodeAssert.equal(evidenceComplete(report, ["e2e"], "other", "head"), false);
+  NodeAssert.equal(evidenceComplete(report, ["e2e"], "base", "new"), false);
+  NodeAssert.equal(evidenceComplete(report, ["e2e", "uat"], "base", "head"), false);
   for (const status of ["skipped", "blocked", "failed", "pending"])
-    assert.equal(
+    NodeAssert.equal(
       evidenceComplete(
         { ...report, evidence: { e2e: { ...report.evidence.e2e, status } } },
         ["e2e"],
@@ -54,7 +70,7 @@ test("validation rejects stale, missing, skipped and unsupported evidence", () =
       ),
       false,
     );
-  assert.equal(
+  NodeAssert.equal(
     evidenceComplete(
       { ...report, evidence: { e2e: { status: "passed", urls: [] } } },
       ["e2e"],
@@ -65,11 +81,11 @@ test("validation rejects stale, missing, skipped and unsupported evidence", () =
   );
 });
 
-test("request metadata round trips and absent metadata is not a managed request", () => {
+NodeTest.test("request metadata round trips and absent metadata is not a managed request", () => {
   const request = { upstreamSha: "a", personalSha: "b", key: "c" };
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     parseRequest(`<!-- t3-upstream:${Buffer.from(JSON.stringify(request)).toString("base64")} -->`),
     request,
   );
-  assert.equal(parseRequest("ordinary PR"), undefined);
+  NodeAssert.equal(parseRequest("ordinary PR"), undefined);
 });
