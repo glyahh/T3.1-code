@@ -17,6 +17,8 @@ import {
   T3_CODE_LIGHT_THEME_COLORS,
   type ThemeAppearance,
 } from "@t3tools/shared/themePalettes";
+import * as Clock from "effect/Clock";
+import * as Crypto from "effect/Crypto";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -102,6 +104,15 @@ export class HtmlRenderStoreError extends Schema.TaggedError<HtmlRenderStoreErro
   }
 }
 
+export class HtmlPreviewReferenceError extends Schema.TaggedError<HtmlPreviewReferenceError>()(
+  "HtmlPreviewReferenceError",
+  {},
+) {
+  override get message(): string {
+    return "Preview unavailable. Preview the page again in this thread.";
+  }
+}
+
 export type HtmlRenderPrepareError =
   | HtmlRenderImagesNotFoundError
   | HtmlRenderImageTooLargeError
@@ -109,6 +120,7 @@ export type HtmlRenderPrepareError =
   | HtmlRenderViewportHeightError;
 
 export interface HtmlPreview {
+  readonly previewId?: string | undefined;
   readonly png: string;
   readonly width: number;
   readonly contentHeight: number;
@@ -123,11 +135,16 @@ export class HtmlRender extends Context.Service<
     readonly prepare: (html: string) => Effect.Effect<string, HtmlRenderPrepareError>;
     readonly publish: (input: {
       readonly threadId: ThreadId;
-      readonly html: string;
+      readonly html?: string | undefined;
+      readonly previewId?: string | undefined;
       readonly title: string;
       readonly height: number;
-    }) => Effect.Effect<HtmlRenderReference, HtmlRenderPrepareError | HtmlRenderStoreError>;
+    }) => Effect.Effect<
+      HtmlRenderReference,
+      HtmlRenderPrepareError | HtmlRenderStoreError | HtmlPreviewReferenceError
+    >;
     readonly preview: (input: {
+      readonly threadId?: ThreadId;
       readonly html: string;
       readonly width?: number | undefined;
       readonly appearance?: ThemeAppearance | undefined;
@@ -331,6 +348,20 @@ const MEASURE_FRAGMENT = htmlRenderThemeFragment(
 
 const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
+  const crypto = yield* Crypto.Crypto;
+  const previews = new Map<
+    string,
+    { threadId: ThreadId; html: string; expiresAt: number; bytes: number }
+  >();
+  let previewBytes = 0;
+  const prunePreviews = (now: number, incoming = 0) => {
+    for (const [id, page] of previews) {
+      if (page.expiresAt <= now || previews.size >= 64 || previewBytes + incoming > 32 * MIB) {
+        previews.delete(id);
+        previewBytes -= page.bytes;
+      }
+    }
+  };
   const config = yield* ServerConfig.ServerConfig;
   const previewBrowser = yield* PreviewBrowser.PreviewBrowser;
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
@@ -411,11 +442,22 @@ const make = Effect.gen(function* () {
 
   const publish = Effect.fn("HtmlRender.publish")(function* (input: {
     readonly threadId: ThreadId;
-    readonly html: string;
+    readonly html?: string | undefined;
+    readonly previewId?: string | undefined;
     readonly title: string;
     readonly height: number;
   }) {
-    const html = yield* prepare(input.html);
+    if ((input.html === undefined) === (input.previewId === undefined))
+      return yield* new HtmlPreviewReferenceError({});
+    const now = yield* Clock.currentTimeMillis;
+    const page = input.previewId === undefined ? undefined : previews.get(input.previewId);
+    if (
+      input.previewId !== undefined &&
+      (!page || page.threadId !== input.threadId || page.expiresAt <= now)
+    ) {
+      return yield* new HtmlPreviewReferenceError({});
+    }
+    const html = page?.html ?? (yield* prepare(input.html!));
     // The `-html` id suffix makes the asset route serve it as a sandboxed text/html document.
     const attachmentId = createAttachmentId(input.threadId, "html");
     const filePath =
@@ -443,7 +485,11 @@ const make = Effect.gen(function* () {
           ...(heights === undefined ? {} : { heights }),
         };
         return mcpSessions
-          .recordHtmlRender(input.threadId, input, reference)
+          .recordHtmlRender(
+            input.threadId,
+            { ...input, html: page?.html ?? input.html! },
+            reference,
+          )
           .pipe(Effect.as(reference));
       }),
       // An interrupted publish must leave neither an attachment nor a recoverable reference.
@@ -460,6 +506,7 @@ const make = Effect.gen(function* () {
   });
 
   const preview = Effect.fn("HtmlRender.preview")(function* (input: {
+    readonly threadId?: ThreadId;
     readonly html: string;
     readonly width?: number | undefined;
     readonly appearance?: ThemeAppearance | undefined;
@@ -487,8 +534,25 @@ const make = Effect.gen(function* () {
         appearance,
       }).pipe(Effect.provideContext(services)),
     );
+    let previewId: string | undefined;
+    if (input.threadId !== undefined && inlined.missing.length === 0) {
+      const now = yield* Clock.currentTimeMillis;
+      const bytes = new TextEncoder().encode(inlined.html).byteLength;
+      if (bytes <= 32 * MIB) {
+        previewId = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+        prunePreviews(now, bytes);
+        previews.set(previewId, {
+          threadId: input.threadId,
+          html: inlined.html,
+          expiresAt: now + 30 * 60_000,
+          bytes,
+        });
+        previewBytes += bytes;
+      }
+    }
     return {
       ...screenshot,
+      ...(previewId === undefined ? {} : { previewId }),
       width,
       ...(inlined.missing.length === 0 ? {} : { missingImages: inlined.missing }),
     } satisfies HtmlPreview;

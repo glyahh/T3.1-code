@@ -31,6 +31,10 @@ import {
 
 export type WorkLogToolLifecycleStatus = RuntimeItemStatus | "stopped" | "idle";
 
+export function planningWaitLabel(progressAtMs: number, nowMs: number): string {
+  return nowMs - progressAtMs >= 30_000 ? "Taking longer than expected" : "Planning next move";
+}
+
 export function toolItemForDisplay(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
   switch (item.type) {
     case "command_execution":

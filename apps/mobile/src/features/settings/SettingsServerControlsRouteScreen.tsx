@@ -118,6 +118,7 @@ const STREAMING_CHOICES: ReadonlyArray<{
   readonly label: string;
   readonly description: string;
 }> = [
+  { mode: "live", label: "Live", description: "Show text as it arrives." },
   {
     mode: "turn",
     label: "After the turn",
@@ -355,7 +356,14 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       ) : null
                     }
                   >
-                    {STREAMING_CHOICES.map((choice, index) => (
+                    {STREAMING_CHOICES.filter(
+                      (choice) =>
+                        choice.mode !== "live" ||
+                        (selectedTargets.length > 0 &&
+                          selectedTargets.every(
+                            (target) => target.serverConfig.liveResponseStreaming === true,
+                          )),
+                    ).map((choice, index) => (
                       <SettingsChoiceRow
                         key={choice.mode}
                         label={choice.label}

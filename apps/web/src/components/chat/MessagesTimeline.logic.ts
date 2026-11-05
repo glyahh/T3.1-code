@@ -239,10 +239,7 @@ export function liveWorkEntryLabel(
 ) {
   const status = liveActivityToolStatus(entry.toolLifecycleStatus, active);
   if (entry.itemType === "reasoning") {
-    return (
-      entry.detail?.trim().replace(/\s+/g, " ") ||
-      (status === "inProgress" ? "Thinking" : "Thought")
-    );
+    return status === "inProgress" ? "Thinking" : thoughtLabel([entry]);
   }
   const toolPresentation = resolveWorkEntryToolPresentation({
     ...entry,
@@ -544,11 +541,11 @@ type MessagesTimelineRowContent =
     }
   | {
       kind: "work-live";
+      separateStatus?: boolean;
       id: string;
       createdAt: string;
       entry: WorkLogEntry;
       groupedEntries: WorkLogEntry[];
-      summaryEntries: WorkLogEntry[];
       groupId: string;
       expanded: boolean;
       active: boolean;
@@ -560,6 +557,16 @@ type MessagesTimelineRowContent =
       createdAt: string | null;
       /** A running compaction owns the working row, so its divider appears only once it ends. */
       compacting?: true;
+    }
+  | {
+      kind: "live-status";
+      id: string;
+      createdAt: string | null;
+      entry: WorkLogEntry | null;
+      activityKey: string;
+      hidden: boolean;
+      groupId?: string;
+      expanded?: boolean;
     }
   | {
       kind: "thinking";
@@ -1509,6 +1516,7 @@ export function deriveMessagesTimelineRows(input: {
   const bodyOwnsActivity =
     lastContentEntry?.kind === "message" &&
     lastContentEntry.message.role === "assistant" &&
+    lastContentEntry.message.streaming &&
     Boolean(lastContentEntry.message.text.trim());
   const isPendingApproval = (entry: WorkLogEntry) => {
     const item = entry.projectedItem?.item;
@@ -1696,19 +1704,6 @@ export function deriveMessagesTimelineRows(input: {
             createdAt: activeWorkAnchor.createdAt,
             entry: currentActivityEntry.entry,
             groupedEntries: visibleActiveToolEntries.map((entry) => entry.entry),
-            summaryEntries: timelineEntries
-              .slice(activeTurnHeaderIndex)
-              .flatMap((entry) =>
-                entry.kind === "work" &&
-                runIdIsActiveResponse(entry.entry.runId) &&
-                workLogEntryIsToolLike(entry.entry) &&
-                entry.entry.itemType !== "reasoning" &&
-                entry.entry.itemType !== "approval_request" &&
-                entry.entry.itemType !== "user_input_request" &&
-                workEntryIsVisibleInGroup(entry.entry, true)
-                  ? [entry.entry]
-                  : [],
-              ),
             groupId,
             expanded: input.expandedWorkGroupIds?.has(groupId) ?? false,
             active: latestToolKeepsActivityLive,
@@ -1995,11 +1990,18 @@ export function deriveMessagesTimelineRows(input: {
         groupedEntries.push(nextEntry.entry);
         cursor += 1;
       }
-      const visibleGroupedEntries = groupedEntries.filter((entry) =>
-        workEntryIsVisibleInGroup(
-          entry,
-          closedPhaseEntries.has(entry) || workEntryIsInActiveRun(entry),
-        ),
+      const visibleGroupedEntries = groupedEntries.filter(
+        (entry) =>
+          !(
+            entry.projectedItem?.item.type === "error" &&
+            entry.projectedItem.item.retry !== undefined &&
+            entry.projectedItem.item.status === "completed" &&
+            !(entry.runId && input.expandedRunIds?.has(entry.runId))
+          ) &&
+          workEntryIsVisibleInGroup(
+            entry,
+            closedPhaseEntries.has(entry) || workEntryIsInActiveRun(entry),
+          ),
       );
       if (visibleGroupedEntries.length > 0) {
         const activeInProgressToolEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
@@ -2016,7 +2018,6 @@ export function deriveMessagesTimelineRows(input: {
             createdAt: timelineEntry.createdAt,
             entry: latestActiveToolEntry,
             groupedEntries: visibleGroupedEntries,
-            summaryEntries: visibleGroupedEntries,
             groupId,
             expanded,
             active: true,
@@ -2047,7 +2048,15 @@ export function deriveMessagesTimelineRows(input: {
         } else {
           const groupId = workGroupId(timelineEntry.id);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
-          const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);
+          const summaryEntries = visibleGroupedEntries.filter(
+            (entry) =>
+              !(
+                entry.projectedItem?.item.type === "error" &&
+                entry.projectedItem.item.retry !== undefined &&
+                entry.projectedItem.item.status === "completed"
+              ),
+          );
+          const summaryKind = toolGroupSummaryKind(summaryEntries);
           const primarySourceEntry = visibleGroupedEntries.find(
             (entry) => entry.toolSource !== undefined,
           );
@@ -2079,11 +2088,13 @@ export function deriveMessagesTimelineRows(input: {
             hiddenCount: visibleGroupedEntries.length,
             expanded,
             summary:
-              summaryKind === "reasoning"
-                ? thoughtLabel(visibleGroupedEntries)
-                : singleEntry !== null && !workLogEntryIsToolLike(singleEntry)
-                  ? singleEntry.label
-                  : summarizeToolGroup(visibleGroupedEntries, 3).summary,
+              summaryEntries.length === 0
+                ? (singleEntry?.label ?? visibleGroupedEntries[0]!.label)
+                : summaryKind === "reasoning"
+                  ? thoughtLabel(summaryEntries)
+                  : singleEntry !== null && !workLogEntryIsToolLike(singleEntry)
+                    ? singleEntry.label
+                    : summarizeToolGroup(summaryEntries, 3).summary,
             summaryKind,
             ...(groupToolSurface ? { toolSurface: groupToolSurface } : {}),
             ...(groupToolIcon ? { toolIcon: groupToolIcon } : {}),
@@ -2303,6 +2314,36 @@ export function deriveMessagesTimelineRows(input: {
     }
   }
 
+  if (input.collapsedLiveRunIds !== undefined) {
+    const statusSource = nextRows.findLast(
+      (row) => row.kind === "work-live" || row.kind === "thinking" || row.kind === "live-status",
+    );
+    for (let i = nextRows.length - 1; i >= 0; i--)
+      if (nextRows[i]?.kind === "thinking") nextRows.splice(i, 1);
+    if (
+      (statusSource !== undefined || bodyOwnsActivity) &&
+      input.isWorking &&
+      input.latestRun?.turnEnded !== true &&
+      !setupOwnsWorkingSlot &&
+      !hasActiveCompaction &&
+      !input.pendingApprovalRequestIds?.size
+    ) {
+      const entry = statusSource?.kind === "work-live" ? statusSource.entry : null;
+      const attempt =
+        timelineEntries.findLast(
+          (entry) => timelineEntryRunId(entry) === unsettledRunId && entry.attempt,
+        )?.attempt?.attemptOrdinal ?? 1;
+      nextRows.push({
+        kind: "live-status",
+        id: `live-status:${unsettledRunId ?? "runless"}:${attempt}`,
+        createdAt: lastProgressAt,
+        entry,
+        activityKey: entry?.id ?? "planning",
+        hidden: Boolean(bodyOwnsActivity),
+      });
+    }
+    for (const row of nextRows) if (row.kind === "work-live") row.separateStatus = true;
+  }
   const result = attachTrailingToolGroupsToAssistant(
     attachCreatedThreadSummaries(nextRows, timelineEntries, collapsedFoldMemberIds),
   );
@@ -2341,7 +2382,8 @@ function timelineRowIsWorkLog(row: MessagesTimelineRow | undefined): boolean {
     (row.kind === "work" ||
       row.kind === "work-toggle" ||
       row.kind === "work-live" ||
-      row.kind === "thinking")
+      row.kind === "thinking" ||
+      row.kind === "live-status")
   );
 }
 
@@ -2570,6 +2612,8 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       return (
         a.createdAt === (b as typeof a).createdAt && a.compacting === (b as typeof a).compacting
       );
+    case "live-status":
+      return Equal.equals(a, b);
     case "thinking": {
       const bt = b as typeof a;
       return a.createdAt === bt.createdAt && a.groupId === bt.groupId && a.expanded === bt.expanded;
@@ -2658,7 +2702,6 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.expanded === bw.expanded &&
         a.active === bw.active &&
         Equal.equals(a.entry, bw.entry) &&
-        Equal.equals(a.summaryEntries, bw.summaryEntries) &&
         Equal.equals(a.groupedEntries, bw.groupedEntries)
       );
     }

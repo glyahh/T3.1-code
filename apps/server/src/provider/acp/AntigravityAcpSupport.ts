@@ -52,6 +52,20 @@ export const makeAntigravityAcpRuntime = Effect.fn("makeAntigravityAcpRuntime")(
   Crypto.Crypto | Scope.Scope
 > {
   const hostPlatform = input.processGroupPlatform ?? (yield* HostProcess.Platform);
+  let reportDiagnostic: (title: string) => Effect.Effect<void> = () => Effect.void;
+  const stderrHandler = makeAntigravityStderrHandler({
+    ...(input.onAuthorizationUrl ? { onAuthorizationUrl: input.onAuthorizationUrl } : {}),
+    onDiagnostic: (diagnostic) =>
+      Effect.logWarning("Antigravity ACP proxy failure", diagnostic).pipe(
+        Effect.andThen(
+          reportDiagnostic(
+            diagnostic.category === "backend_connection_failed"
+              ? "Provider connection failed"
+              : "Provider connection issue",
+          ),
+        ),
+      ),
+  });
   const context = yield* Layer.build(
     AcpSessionRuntime.layer({
       ...input,
@@ -72,11 +86,10 @@ export const makeAntigravityAcpRuntime = Effect.fn("makeAntigravityAcpRuntime")(
       transformStdout: makeAntigravityStdoutTransform(
         input.onAuthorizationUrl ? { onAuthorizationUrl: input.onAuthorizationUrl } : {},
       ),
-      onStderr: makeAntigravityStderrHandler({
-        ...(input.onAuthorizationUrl ? { onAuthorizationUrl: input.onAuthorizationUrl } : {}),
-        onDiagnostic: (diagnostic) =>
-          Effect.logWarning("Antigravity ACP proxy failure", diagnostic),
-      }),
+      onStderr: (text, report) => {
+        reportDiagnostic = report;
+        return stderrHandler(text);
+      },
       transformSessionUpdate: normalizeAntigravitySessionUpdate,
     }).pipe(
       Layer.provide(

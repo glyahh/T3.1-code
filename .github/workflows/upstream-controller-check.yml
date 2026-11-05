@@ -1,0 +1,49 @@
+name: Upstream Controller Checks
+on:
+  push:
+    branches: [codex/personal-main, codex/upstream-workflow-setup]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  controller:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch public source without submodule traversal
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          git init .
+          git remote add origin https://github.com/glyahh/t3code.git
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git fetch --depth=1 origin "$SOURCE_SHA"
+          git checkout --detach FETCH_HEAD
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - run: node --test .github/upstream/controller.test.mjs
+      - run: node --check scripts/upstream-sync.mjs
+      - run: node --check scripts/upstream-verify.mjs
+  quality:
+    needs: controller
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Fetch source and comparison baseline
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          git init .
+          git remote add origin https://github.com/glyahh/t3code.git
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git fetch origin "$SOURCE_SHA"
+          git checkout --detach FETCH_HEAD
+          git fetch origin main:refs/remotes/origin/main
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
+        with:
+          node-version-file: package.json
+          run-install: false
+          cache: false
+      - run: vp install --frozen-lockfile
+      - name: Affected checks against main
+        run: vp run check:changed origin/main

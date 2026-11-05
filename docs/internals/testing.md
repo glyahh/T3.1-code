@@ -59,6 +59,8 @@ Rules for writing tests, and for asking for them in review. AGENTS.md carries th
 
 ## Web browser tests
 
+- For integrated web verification, follow `test-t3-app` using the current agent application's built-in browser and its browser skill against isolated development state. No T3 Browser tools or dedicated T3 agent session are required. Verify desktop-specific behavior in the actual desktop client using the available desktop-control skill; a browser run establishes web behavior only. Keep the existing acceptance criteria and evidence requirements. Use `test-t3-mobile` for native mobile verification when it is in scope.
+
 - Web browser tests are `*.browser.test.tsx` or `*.browser.test.ts` and render with `await using screen = await render(...)` from `apps/web/test/render.tsx`. `t3code/require-disposable-render` errors on the old patterns.
   - Acquire what the test drives after mounting (fake timers it advances, spies it sets up after mounting) after the render, so it disposes before the unmount. Anything the first render reads comes before it.
   - A helper that renders and then waits or clicks puts the screen in an `AsyncDisposableStack` and `move()`s it out only on success, so a failed wait still unmounts.

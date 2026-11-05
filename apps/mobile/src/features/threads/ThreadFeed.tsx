@@ -1,3 +1,4 @@
+import { liveTextSequence, isNewLiveText } from "@t3tools/client-runtime/streaming-text";
 import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
@@ -30,6 +31,7 @@ import * as Haptics from "expo-haptics";
 import { KeyboardAwareLegendList } from "@legendapp/list/keyboard";
 import { useViewabilityAmount, type LegendListRef } from "@legendapp/list/react-native";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { useStreamingText } from "./useStreamingText";
 import type { HandoffEndpoints } from "@t3tools/client-runtime/handoff";
 import {
   IDLE_COMPACTING_LABELS,
@@ -1178,6 +1180,10 @@ function ArtifactTemplateCard(props: {
 
 const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
   readonly markdown: string;
+  readonly natural?: boolean;
+  readonly phaseKnown?: boolean;
+  readonly streaming?: boolean;
+  readonly active?: boolean;
   readonly environmentId: EnvironmentId;
   readonly markdownStyles: MarkdownStyleSet;
   readonly linkHandlers: MarkdownLinkHandlers;
@@ -1185,7 +1191,14 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
   readonly renderImage: MarkdownImageRenderer;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill> | undefined;
 }) {
-  const liveMarkdown = useLiveThreadLinkLabels(props.markdown, props.environmentId);
+  const displayed = useStreamingText(
+    props.markdown,
+    props.streaming === true,
+    props.active === true,
+    props.natural === true,
+    props.phaseKnown === true,
+  );
+  const liveMarkdown = useLiveThreadLinkLabels(displayed, props.environmentId);
   const segments = useMemo(() => splitCodexArtifactTemplateMarkdown(liveMarkdown), [liveMarkdown]);
   const threadIcons = useThreadChipIcons(props.environmentId, liveMarkdown);
   const linkHandlers: MarkdownLinkHandlers = {
@@ -1585,6 +1598,7 @@ function renderFeedEntry(
     | "threadId"
     | "workspaceRoot"
   > & {
+    readonly openedTextSequence: number;
     readonly copiedRowId: string | null;
     readonly expandedWorkRows: Record<string, boolean>;
     readonly workRowSizing: ReturnType<typeof deriveThreadWorkLogSizing>;
@@ -1666,7 +1680,15 @@ function renderFeedEntry(
   }
 
   if (entry.type === "thinking") {
-    return <ThreadThinkingRow rowSizing={props.workRowSizing} iconSubtleColor={iconSubtleColor} />;
+    return (
+      <ThreadThinkingRow
+        progressAt={entry.createdAt}
+        label={entry.label}
+        activityKey={entry.activityKey}
+        rowSizing={props.workRowSizing}
+        iconSubtleColor={iconSubtleColor}
+      />
+    );
   }
 
   if (entry.type === "html-render") {
@@ -2176,6 +2198,25 @@ function renderFeedEntry(
         {renderedText.trim().length > 0 ? (
           <MarkdownImageAvailableWidthContext value={props.markdownContentWidth}>
             <AssistantMarkdownContent
+              key={message.id}
+              phaseKnown={message.phase !== undefined}
+              natural={
+                message.phase !== "final_answer" &&
+                (message.phase !== undefined ||
+                  (!message.streaming && renderedText.length <= 256)) &&
+                isNewLiveText(
+                  `${props.environmentId}:${props.threadId}:${message.runId}:${message.id}`,
+                  props.openedTextSequence,
+                )
+              }
+              streaming={
+                message.streaming &&
+                isNewLiveText(
+                  `${props.environmentId}:${props.threadId}:${message.runId}:${message.id}`,
+                  props.openedTextSequence,
+                )
+              }
+              active={assistantTurnStillInProgress}
               markdown={renderedText}
               environmentId={props.environmentId}
               markdownStyles={styles}
@@ -2507,6 +2548,7 @@ function useThreadFeedPresentation(
       props.activeWorkStartedAt,
       props.runlessWorkActive ?? false,
       feedCache,
+      true,
     ),
     props.feed,
     props.queuedMessages,
@@ -2517,6 +2559,12 @@ export const ThreadFeed = memo(function ThreadFeed({
   ref,
   ...props
 }: ThreadFeedProps & { readonly ref?: Ref<ThreadFeedHandle> }) {
+  const [textView, setTextView] = useState(() => ({
+    id: props.threadId,
+    sequence: liveTextSequence(),
+  }));
+  if (textView.id !== props.threadId)
+    setTextView({ id: props.threadId, sequence: liveTextSequence() });
   const { listRef, onEndFollowEnabledChange, onHeaderMaterialVisibilityChange } = props;
   const workflowOpening = useWorkflowOpening(props.detailRef);
   const guestShare = useThreadGuestShare(props.detailRef);
@@ -3514,6 +3562,7 @@ export const ThreadFeed = memo(function ThreadFeed({
       >
         <ThreadMediaVisibility>
           {renderFeedEntry(info, {
+            openedTextSequence: textView.sequence,
             userMessageGrouping: info.item.userMessageGrouping,
             environmentId: props.environmentId,
             dispatchingMessageId: props.dispatchingMessageId,

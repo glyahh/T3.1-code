@@ -1,4 +1,4 @@
-import { makeAssistantStreamingFilter } from "./assistantStreaming.ts";
+import { coalesceLiveAssistantEvents, makeAssistantStreamingFilter } from "./assistantStreaming.ts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   isOrchestrationV2WorkActive,
@@ -1286,6 +1286,19 @@ export const layer: Layer.Layer<
           }
           return true;
         });
+        const milestones = new Set<string>();
+        const milestone = (stage: string) =>
+          Effect.suspend(() => {
+            if (milestones.has(stage)) return Effect.void;
+            milestones.add(stage);
+            return Effect.logInfo("run.latency.milestone", {
+              stage,
+              threadId: input.run.threadId,
+              runId: input.run.id,
+              attemptId: input.attempt.id,
+            });
+          });
+        yield* milestone("provider_subscription_ready");
         const filterAssistantEvent = makeAssistantStreamingFilter(responseStreamingMode);
         // Held text writes nothing, so its item would take a position only
         // when finally written, behind every item that began after it.
@@ -1293,7 +1306,11 @@ export const layer: Layer.Layer<
         // Ends once the root turn and the children it drives settle. Background commands such
         // as a dev server keep this consumer alive afterwards and must not pin preview focus.
         const endPreviewActivity = yield* previewAgentActivity.begin(input.run.threadId);
-        const providerEventFiber = yield* eventSubscription.events.pipe(
+        const providerEventFiber = yield* (
+          responseStreamingMode === "live"
+            ? coalesceLiveAssistantEvents(eventSubscription.events)
+            : eventSubscription.events
+        ).pipe(
           Stream.mapEffect((event) =>
             Effect.gen(function* () {
               const previous = yield* Ref.get(eventRouting);
@@ -1377,6 +1394,16 @@ export const layer: Layer.Layer<
           Stream.tap(({ event, accepted }) =>
             Effect.gen(function* () {
               if (!accepted) return;
+              yield* milestone("first_provider_event");
+              if (
+                (event.type === "message.updated" &&
+                  event.message.role === "assistant" &&
+                  event.message.text.length > 0) ||
+                (event.type === "turn_item.updated" &&
+                  event.turnItem.type === "assistant_message" &&
+                  event.turnItem.text.length > 0)
+              )
+                yield* milestone("first_assistant_text");
               if (
                 event.type === "provider_turn.updated" &&
                 event.providerTurn.runAttemptId === input.attempt.id &&
@@ -1431,6 +1458,14 @@ export const layer: Layer.Layer<
                     : {}),
                 });
                 storedEventCount = storedEvents.length;
+                if (
+                  storedEventCount > 0 &&
+                  ((deliveredEvent.type === "message.updated" &&
+                    deliveredEvent.message.role === "assistant") ||
+                    (deliveredEvent.type === "turn_item.updated" &&
+                      deliveredEvent.turnItem.type === "assistant_message"))
+                )
+                  yield* milestone("first_assistant_text_persisted");
                 if (
                   isRootProviderThreadUpdate &&
                   rootTerminalAlreadySeen &&

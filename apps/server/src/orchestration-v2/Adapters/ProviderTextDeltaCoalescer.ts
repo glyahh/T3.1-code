@@ -104,6 +104,8 @@ export const makeProviderTextDeltaCoalescer = Effect.fn("makeProviderTextDeltaCo
               Effect.gen(function* () {
                 const shouldSchedule = yield* flushLock.withPermit(
                   Effect.gen(function* () {
+                    const key = providerTextBufferKey(turnId, itemId);
+                    const first = !(yield* Ref.get(buffered)).has(key);
                     yield* Ref.update(buffered, (current) => {
                       const key = providerTextBufferKey(turnId, itemId);
                       const existing = current.get(key);
@@ -112,10 +114,14 @@ export const makeProviderTextDeltaCoalescer = Effect.fn("makeProviderTextDeltaCo
                         turnId,
                         itemId,
                         text: `${existing?.text ?? ""}${delta}`,
-                        dirty: true,
+                        dirty: !first,
                       });
                       return next;
                     });
+                    if (first) {
+                      yield* input.emit({ turnId, itemId, text: delta, completed: false });
+                      return false;
+                    }
                     return yield* Ref.modify(flushScheduled, (scheduled) => [!scheduled, true]);
                   }),
                 );

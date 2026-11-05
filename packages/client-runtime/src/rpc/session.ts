@@ -176,6 +176,7 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
   const onDemandSnapshots = (input: ServerConfigSubscriptionInput) => ({
     ...input,
     workspaceSnapshotsOnDemand: true,
+    liveResponseStreaming: true,
   });
 
   const connect = Effect.fnUntraced(function* (connection: PreparedConnection) {

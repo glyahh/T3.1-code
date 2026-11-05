@@ -136,14 +136,17 @@ describe("CodexAdapterV2 assistant message streaming", () => {
       yield* coalescer.flushTurn("turn-1");
 
       assert.equal(completedText, "item final");
-      assert.deepEqual(yield* Ref.get(updates), [
-        { turnId: "turn-1", itemId: "message-1", text: "item final", completed: true },
-        { turnId: "turn-1", itemId: "message-2", text: "turn final", completed: true },
-      ]);
+      assert.deepEqual(
+        (yield* Ref.get(updates)).filter((update) => update.completed),
+        [
+          { turnId: "turn-1", itemId: "message-1", text: "item final", completed: true },
+          { turnId: "turn-1", itemId: "message-2", text: "turn final", completed: true },
+        ],
+      );
       yield* Effect.yieldNow;
       yield* TestClock.adjust("50 millis");
       yield* Effect.yieldNow;
-      assert.equal((yield* Ref.get(updates)).length, 2);
+      assert.equal((yield* Ref.get(updates)).filter((update) => update.completed).length, 2);
     }),
   );
 });

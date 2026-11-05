@@ -1,4 +1,4 @@
 interface:
   display_name: "T3 App Testing"
-  short_description: "Test web and desktop in T3's Browser panel"
-  default_prompt: "Use $test-t3-app to verify the affected web or desktop flow through T3's Browser panel."
+  short_description: "Test web in the in-app browser and desktop in its client"
+  default_prompt: "Use $test-t3-app to verify the web flow in the current agent application's built-in browser and desktop-specific behavior in the actual desktop client, using isolated development state."

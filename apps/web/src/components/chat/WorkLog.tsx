@@ -22,13 +22,14 @@ export function WorkLogBlock({
 }) {
   return (
     <div
-      className={
-        continues || layout === "group-header"
+      className={cn(
+        "empty:hidden",
+        layout === "group-header" || (layout === "group-content" && continues)
           ? "pb-0"
           : layout === "group-content"
             ? "pb-1"
-            : "pb-2"
-      }
+            : "pb-2",
+      )}
     >
       {children}
     </div>

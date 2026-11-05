@@ -19,9 +19,7 @@ export function formatWorkingTimerNow(startIso: string): string {
   return formatWorkingTimer(startIso, new Date().toISOString()) ?? "0s";
 }
 
-export function planningWaitLabel(progressAtMs: number, nowMs: number): string {
-  return nowMs - progressAtMs >= 30_000 ? "Taking longer than expected" : "Planning next move";
-}
+export { planningWaitLabel } from "@t3tools/client-runtime/work-log/presentation";
 
 export function formatPreciseWorkingDuration(elapsedMs: number): string {
   const seconds = Number.isFinite(elapsedMs) ? Math.max(0, Math.floor(elapsedMs / 1000)) : 0;

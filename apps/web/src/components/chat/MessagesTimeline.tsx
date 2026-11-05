@@ -1,3 +1,4 @@
+import { liveTextSequence } from "@t3tools/client-runtime/streaming-text";
 import {
   ExecutionMotionBoundary,
   captureExecutionRows,
@@ -416,6 +417,12 @@ const ConversationTimeline = memo(function ConversationTimeline({
   historyControls,
 }: MessagesTimelineProps) {
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
+  const [textView, setTextView] = useState(() => ({
+    identity: listIdentityKey,
+    sequence: liveTextSequence(),
+  }));
+  if (textView.identity !== listIdentityKey)
+    setTextView({ identity: listIdentityKey, sequence: liveTextSequence() });
   const savedDisclosures = useUiStateStore(
     (state) => state.threadTimelineExpandedById?.[listIdentityKey],
   );
@@ -790,7 +797,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     worktreeSetup,
   });
   const currentActivityIndex = rawRows.findLastIndex(
-    (row) => row.kind === "thinking" || row.kind === "work-live",
+    (row) => row.kind === "thinking" || row.kind === "live-status" || row.kind === "work-live",
   );
   const activityRows = rawRows.map((row, index) =>
     index === currentActivityIndex ? { ...row, id: "live-activity-row" } : row,
@@ -1173,6 +1180,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       .map((approval) => [approval.requestId, approval]),
   );
   const sharedState: TimelineRowSharedState = {
+    openedTextSequence: textView.sequence,
     pendingApprovals: pendingApprovalsByRequestId,
     respondingRequestIds,
     canOperateThread,
@@ -1595,7 +1603,8 @@ function keyExtractor(item: MessagesTimelineRow) {
 
 // LegendList averages by type; length buckets prevent inflated estimates and nested-update loops.
 function getItemType(item: MessagesTimelineRow) {
-  if (item.kind === "thinking" || item.kind === "work-live") return "live-activity";
+  if (item.kind === "thinking" || item.kind === "live-status" || item.kind === "work-live")
+    return "live-activity";
   if (item.kind !== "message") return item.kind;
   const lengthBucket = Math.max(0, Math.floor(Math.log2(item.message.text.length / 1000)));
   return `message:${item.message.role}:${lengthBucket}`;
@@ -1608,14 +1617,19 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
     row.kind === "work" ||
     row.kind === "work-live" ||
     row.kind === "work-toggle" ||
-    row.kind === "thinking";
+    row.kind === "thinking" ||
+    row.kind === "live-status";
   const isExpandedToolGroupHeader =
-    (row.kind === "work-toggle" || row.kind === "work-live" || row.kind === "thinking") &&
+    (row.kind === "work-toggle" ||
+      row.kind === "work-live" ||
+      row.kind === "thinking" ||
+      row.kind === "live-status") &&
     row.expanded === true;
 
   return (
     <div
       className={cn(
+        row.kind === "live-status" && row.hidden && "hidden",
         isWorkLogRow || isSubagentGroup
           ? undefined
           : row.kind === "turn-fold"
@@ -1671,7 +1685,10 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
               displayLabel={row.displayLabel}
             />
           ) : null}
-          {row.kind === "work-live" || row.kind === "work-toggle" || row.kind === "thinking" ? (
+          {row.kind === "work-live" ||
+          row.kind === "work-toggle" ||
+          row.kind === "thinking" ||
+          row.kind === "live-status" ? (
             <WorkGroupTimelineRow row={row} />
           ) : null}
         </WorkLogBlock>
