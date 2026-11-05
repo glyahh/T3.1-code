@@ -30,6 +30,16 @@ export const resolveRepository = (policy, environment = process.env) => {
     throw new Error("Invalid repository name");
   return environment.GITHUB_REPOSITORY;
 };
+export const cloudDispatchError = (comments) => {
+  const rejected = comments.find(
+    (comment) =>
+      comment.user?.login === "chatgpt-codex-connector[bot]" &&
+      comment.body?.includes("create an environment for this repo"),
+  );
+  return rejected
+    ? `GitHub 评论入口未接入本仓库的 Codex 云端环境，请核对集成配置：${rejected.html_url}`
+    : undefined;
+};
 export const evidenceComplete = (report, required, base, head) =>
   report?.baseSha === base &&
   report?.headSha === head &&
@@ -64,6 +74,11 @@ const ancestor = (a, b) => {
   }
 };
 const marker = "<!-- t3-upstream:";
+const summary = (text) => {
+  if (process.env.GITHUB_STEP_SUMMARY)
+    NodeFS.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${text}\n`);
+  else console.log(text);
+};
 export const parseRequest = (body = "") => {
   const match = body.match(/<!-- t3-upstream:([A-Za-z0-9+/=]+) -->/);
   if (!match) return undefined;
@@ -143,6 +158,8 @@ async function main() {
       return;
     }
     const comments = await list(`${repo}/issues/${active.number}/comments`);
+    const blocked = executor === "codex-cloud" && cloudDispatchError(comments);
+    if (blocked) throw new Error(blocked);
     if (executor === "work-cloud") {
       if (
         !comments.some(
@@ -155,6 +172,7 @@ async function main() {
           body: task(request, policy, active.number, 1, executor),
         });
       }
+      summary(`候选 #${active.number} 等待独立云端执行器；尚未确认实际执行与回写。`);
       return;
     }
     const rounds = comments.filter(
@@ -193,6 +211,7 @@ async function main() {
         body: `云端任务已超过等待窗口。保留草稿，请检查任务、额度和回写权限。<!-- timeout:${last.id} -->`,
       });
     }
+    summary(`候选 #${active.number} 仍为草稿；任务投递和候选更新不代表完整产品验收通过。`);
     return;
   }
   if (mode === "retry") throw new Error("No active candidate");
@@ -269,12 +288,12 @@ async function main() {
     await api(`${repo}/issues/${pr.number}/comments`, "POST", {
       body: task(request, policy, pr.number, 1, executor),
     });
+    summary(
+      `已创建接入/同步草稿：${pr.html_url}。仅已发送任务，尚未确认云端执行、回写及完整验收。`,
+    );
     return;
   }
-  NodeFS.writeFileSync(
-    process.env.GITHUB_STEP_SUMMARY || "/dev/stdout",
-    "没有需要创建的正式版本候选。\n",
-  );
+  summary("没有需要创建的正式版本候选。");
 }
 
 export function task(request, policy, number, round, executor = "codex-cloud") {
@@ -288,6 +307,7 @@ export function task(request, policy, number, round, executor = "codex-cloud") {
 if (process.argv[1] && NodeURL.fileURLToPath(import.meta.url) === process.argv[1]) {
   main().catch((error) => {
     console.error(error.message);
+    summary(`同步受阻：${error.message}`);
     process.exitCode = 1;
   });
 }
