@@ -89,13 +89,50 @@ function toThreadStructureThread(thread: AppThread): ThreadStructureThread {
   return structure;
 }
 
+function cancellationEchoIds(
+  projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems">,
+) {
+  const stopped = new Set(
+    projection.runs.filter((run) => run.status === "interrupted").map((run) => run.id),
+  );
+  const requests = new Set(
+    projection.turnItems
+      .filter((item) => item.type === "run_interrupt_request")
+      .map((item) => item.runId),
+  );
+  const confirmed = new Set(
+    projection.turnItems
+      .filter((item) => item.type === "run_interrupt_result" && requests.has(item.runId))
+      .map((item) => item.runId),
+  );
+  return new Set(
+    projection.turnItems
+      .filter(
+        (item) =>
+          item.type === "assistant_message" &&
+          !item.streaming &&
+          item.nativeItemRef?.driver === "antigravity" &&
+          item.runId !== null &&
+          stopped.has(item.runId) &&
+          confirmed.has(item.runId) &&
+          item.text.trim() === "The request was cancelled by the client.",
+      )
+      .map((item) => item.id),
+  );
+}
+
 function toThreadStructure(projection: OrchestrationV2ThreadProjection): ThreadStructure {
   const { updatedAt: _updatedAt, ...structure } = projection;
+  const hidden = cancellationEchoIds(projection);
   return {
     ...structure,
     thread: toThreadStructureThread(projection.thread),
-    turnItems: projection.turnItems.map(toThreadStructureTurnItem),
-    visibleTurnItems: projection.visibleTurnItems.map(toThreadStructureVisibleTurnItem),
+    turnItems: projection.turnItems
+      .filter((item) => !hidden.has(item.id))
+      .map(toThreadStructureTurnItem),
+    visibleTurnItems: projection.visibleTurnItems
+      .filter((row) => !hidden.has(row.item.id))
+      .map(toThreadStructureVisibleTurnItem),
   };
 }
 
@@ -270,7 +307,10 @@ export function createEnvironmentThreadDetailAtoms<E>(
     const projectQuestionHistory = createQuestionHistoryProjector();
     return Atom.make((get): OrchestrationV2ThreadProjection["visibleTurnItems"] => {
       const projection = Option.getOrNull(get(threadStateValueAtomFamily(key)).data);
-      return projection === null ? EMPTY_VISIBLE_TURN_ITEMS : projectQuestionHistory(projection);
+      if (projection === null) return EMPTY_VISIBLE_TURN_ITEMS;
+      const hidden = cancellationEchoIds(projection);
+      const items = projectQuestionHistory(projection);
+      return hidden.size === 0 ? items : items.filter((row) => !hidden.has(row.item.id));
     }).pipe(Atom.setIdleTTL(0), Atom.withLabel(`environment-thread-visible-turn-items:${key}`));
   });
 

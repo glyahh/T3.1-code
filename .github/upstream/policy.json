@@ -1,8 +1,9 @@
 {
   "version": 1,
   "upstream": "pingdotgg/t3code",
-  "repository": "glyahh/t3code",
-  "personalBranch": "codex/personal-main",
+  "repository": "glyahh/T3.1-code",
+  "repositoryId": 1441172085,
+  "personalBranch": "codex/upstream-unattended-baseline",
   "candidatePrefix": "codex/upstream/",
   "maxRounds": 2,
   "taskTimeoutMinutes": 120,
@@ -86,9 +87,100 @@
     "maximumLocalLatencyRegressionPercent": 10
   },
   "cloudUiToolsAllowed": true,
-  "verification": [],
+  "verification": [
+    {
+      "name": "personal-source",
+      "command": "node",
+      "args": ["{control}/scripts/upstream-preservation.mjs"],
+      "categories": []
+    },
+    {
+      "name": "personal-behavior",
+      "command": "vp",
+      "args": [
+        "test",
+        "run",
+        "packages/client-runtime/src/work-log/presentation.test.ts",
+        "apps/web/src/components/chat/MessagesTimeline.logic.test.ts",
+        "apps/web/src/components/chat/MessagesTimeline.active-tools.test.ts",
+        "apps/web/src/components/chat/TimelineWorkGroupRows.logic.test.ts",
+        "apps/web/src/components/settings/settingsSearch.test.ts",
+        "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts",
+        "apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts",
+        "apps/server/src/orchestration-v2/RestartContinuation.test.ts",
+        "apps/server/src/provider/acp/AntigravityResumeSafety.test.ts",
+        "apps/desktop/src/updates/DesktopUpdates.test.ts",
+        "apps/server/src/htmlRender/HtmlRender.test.ts",
+        "packages/client-runtime/src/filePreview.test.ts"
+      ],
+      "categories": ["unit", "regression"]
+    },
+    {
+      "name": "event-integration",
+      "command": "vp",
+      "args": [
+        "test",
+        "run",
+        "apps/server/src/ws.test.ts",
+        "apps/server/src/orchestration-v2/ThreadStream.test.ts",
+        "apps/server/src/orchestration-v2/ShellStream.test.ts",
+        "apps/server/src/orchestration-v2/WireProjection.test.ts"
+      ],
+      "categories": ["integration"]
+    },
+    {
+      "name": "http-authorization",
+      "command": "vp",
+      "args": [
+        "test",
+        "run",
+        "apps/server/src/http.test.ts",
+        "apps/server/src/orchestration-v2/http.test.ts",
+        "apps/server/src/auth/http.test.ts",
+        "apps/server/src/auth/RpcAuthorization.test.ts"
+      ],
+      "categories": ["api", "security"]
+    },
+    {
+      "name": "wire-contracts",
+      "command": "vp",
+      "args": [
+        "test",
+        "run",
+        "packages/contracts/src/orchestrationV2.test.ts",
+        "packages/contracts/src/settings.test.ts",
+        "packages/contracts/src/modelSelection.test.ts"
+      ],
+      "categories": ["contract"]
+    },
+    {
+      "name": "browser-components",
+      "command": "vp",
+      "args": [
+        "test",
+        "run",
+        "apps/web/src/components/settings/settingsText.browser.test.tsx",
+        "apps/web/src/components/chat/MessagesTimeline.browser.test.tsx",
+        "apps/web/src/components/chat/ThreadRelationshipsControl.browser.test.tsx",
+        "apps/web/src/components/chat/ChatMarkdownMedia.browser.test.tsx",
+        "apps/web/src/components/chat/HtmlRenderFrame.browser.test.tsx"
+      ],
+      "categories": ["unit", "regression"]
+    }
+  ],
   "retainCoreRegressionTests": true,
   "automaticMerge": false,
   "automaticInstall": false,
-  "automaticPublish": false
+  "automaticPublish": false,
+  "testProfile": {
+    "name": "unattended-upgrade",
+    "personalSourceSha": "d1f91c5139becaaed79a266bf13b5faee4577e53",
+    "upstreamSha": "322f6544dfad0a3c8a0c8cbecf2c7f7874b14268",
+    "tag": "v0.1.7",
+    "candidateBranch": "codex/upstream/unattended-v0.1.7",
+    "productionEnabled": false,
+    "automaticMerge": false,
+    "automaticInstall": false,
+    "automaticPublish": false
+  }
 }

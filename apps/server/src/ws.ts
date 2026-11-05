@@ -1726,6 +1726,7 @@ export const layerWsRpc = (
         );
 
       const loadServerConfig = Effect.fn("ws.loadServerConfig")(function* (options: {
+        readonly liveResponseStreaming?: boolean;
         readonly usageLimitsCommand: boolean;
         readonly workspaceSnapshotsOnDemand: boolean;
       }) {
@@ -1739,6 +1740,7 @@ export const layerWsRpc = (
           : commandProviders;
         const settings = ServerSettings.redactServerSettingsForClient(
           yield* serverSettings.getSettings,
+          options.liveResponseStreaming,
         );
         const environment = yield* serverEnvironment.getDescriptor;
         const auth = yield* serverAuth.getDescriptor();
@@ -1753,6 +1755,7 @@ export const layerWsRpc = (
           environment,
           auth,
           cwd: config.cwd,
+          liveResponseStreaming: true,
           keybindingsConfigPath: config.keybindingsConfigPath,
           keybindings: keybindingsConfig.keybindings,
           issues: keybindingsConfig.issues,
@@ -2178,8 +2181,12 @@ export const layerWsRpc = (
             Effect.andThen(scheduledTasks.getWebhookDelivery(input)),
           ),
         [WS_METHODS.serverProbe]: (_input) => Effect.succeed({}),
-        [WS_METHODS.serverGetConfig]: (_input) =>
-          loadServerConfig({ usageLimitsCommand: false, workspaceSnapshotsOnDemand: false }),
+        [WS_METHODS.serverGetConfig]: (input) =>
+          loadServerConfig({
+            liveResponseStreaming: input.liveResponseStreaming === true,
+            usageLimitsCommand: false,
+            workspaceSnapshotsOnDemand: false,
+          }),
         [WS_METHODS.serverSearchAcpRegistry]: (input) =>
           acpRegistryCatalog
             .search(input)
@@ -2514,7 +2521,7 @@ export const layerWsRpc = (
           ),
         [WS_METHODS.serverUpdateSettings]:
           /* Request instrumentation already owns the span; keep this helper in that context. */
-          Effect.fnUntraced(function* ({ patch, providerInstanceMutation }) {
+          Effect.fnUntraced(function* ({ patch, providerInstanceMutation, liveResponseStreaming }) {
             const deviceHosts = patch.deviceHosts
               ? yield* remoteSshDeviceHosts(patch.deviceHosts).pipe(
                   Effect.provide(deviceHostContext),
@@ -2524,7 +2531,7 @@ export const layerWsRpc = (
             const settings = yield* providerInstanceMutation === undefined
               ? serverSettings.updateSettings(nextPatch)
               : serverSettings.updateProviderInstance(providerInstanceMutation, nextPatch);
-            return ServerSettings.redactServerSettingsForClient(settings);
+            return ServerSettings.redactServerSettingsForClient(settings, liveResponseStreaming);
           }),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) => sourceControlDiscovery.discover,
         [WS_METHODS.serverGetTraceDiagnostics]: (_input) =>
@@ -3103,6 +3110,7 @@ export const layerWsRpc = (
               const keybindingsChanges = yield* keybindings.subscribeChanges;
               const settingsChanges = yield* serverSettings.subscribeChanges;
               const config = yield* loadServerConfig({
+                liveResponseStreaming: input.liveResponseStreaming === true,
                 usageLimitsCommand,
                 workspaceSnapshotsOnDemand,
               });
@@ -3172,7 +3180,12 @@ export const layerWsRpc = (
                     )
                   : Stream.empty;
               const settingsUpdates = settingsChanges.pipe(
-                Stream.map((settings) => ServerSettings.redactServerSettingsForClient(settings)),
+                Stream.map((settings) =>
+                  ServerSettings.redactServerSettingsForClient(
+                    settings,
+                    input.liveResponseStreaming,
+                  ),
+                ),
                 Stream.map((settings) => ({
                   version: 1 as const,
                   type: "settingsUpdated" as const,

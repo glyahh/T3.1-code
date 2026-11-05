@@ -17,6 +17,7 @@ const BOUNDED_TEXT_MARKER = "[Earlier output truncated]\n\n";
 const KEPT_HTML_END_LENGTH = 8_000;
 
 interface KeptHtmlRender {
+  readonly previewId?: string | undefined;
   readonly title: string;
   readonly height: number;
   readonly htmlLength: number;
@@ -35,13 +36,23 @@ export class McpProviderSessions extends Context.Service<
     readonly clear: (threadId: ThreadId) => Effect.Effect<void>;
     readonly recordHtmlRender: (
       threadId: ThreadId,
-      input: { readonly html: string; readonly title: string; readonly height: number },
+      input: {
+        readonly html: string;
+        readonly previewId?: string | undefined;
+        readonly title: string;
+        readonly height: number;
+      },
       reference: HtmlRenderReference,
     ) => Effect.Effect<void>;
     // A reported attachment consumes that exact page; otherwise only unique input matches count.
     readonly takeHtmlRender: (
       threadId: ThreadId,
-      input: { readonly html?: unknown; readonly title?: unknown; readonly height?: unknown },
+      input: {
+        readonly html?: unknown;
+        readonly previewId?: unknown;
+        readonly title?: unknown;
+        readonly height?: unknown;
+      },
       reported?: HtmlRenderReference,
     ) => Effect.Effect<HtmlRenderReference | undefined>;
   }
@@ -49,8 +60,26 @@ export class McpProviderSessions extends Context.Service<
 
 const matchingPageIndex = (
   kept: ReadonlyArray<KeptHtmlRender>,
-  input: { readonly html?: unknown; readonly title?: unknown; readonly height?: unknown },
+  input: {
+    readonly html?: unknown;
+    readonly previewId?: unknown;
+    readonly title?: unknown;
+    readonly height?: unknown;
+  },
 ): number => {
+  if (typeof input.previewId === "string") {
+    const matches = kept.flatMap((page, index) =>
+      page.previewId === input.previewId &&
+      page.title === input.title &&
+      page.height ===
+        (typeof input.height === "string" && input.height.trim() !== ""
+          ? Number(input.height)
+          : input.height)
+        ? [index]
+        : [],
+    );
+    return matches.length === 1 ? matches[0]! : -1;
+  }
   const html = input.html;
   if (typeof html !== "string" || html.length === 0) {
     return -1;
@@ -118,6 +147,7 @@ const make = Effect.gen(function* () {
             [
               ...(current.get(threadId) ?? []),
               {
+                ...(input.previewId === undefined ? {} : { previewId: input.previewId }),
                 title: input.title,
                 height: input.height,
                 htmlLength: input.html.length,

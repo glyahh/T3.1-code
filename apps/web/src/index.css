@@ -2582,7 +2582,7 @@ code {
 
 /* Initial estimates from the accepted prototype; calibrate against the reference footage. */
 [data-timeline-row-id] {
-  --agent-state-duration: 220ms;
+  --agent-state-duration: 300ms;
   --agent-insert-duration: 240ms;
   --agent-fold-ms: 240;
   --agent-fold-duration: 240ms;
@@ -2601,7 +2601,7 @@ code {
 [data-timeline-row-id][data-agent-motion="original"] {
   --agent-state-duration: 0ms;
   --agent-insert-duration: 600ms;
-  --agent-sweep-duration: 2200ms;
+  --agent-sweep-duration: 1000ms;
 }
 
 [data-timeline-row-id] [data-agent-details] {

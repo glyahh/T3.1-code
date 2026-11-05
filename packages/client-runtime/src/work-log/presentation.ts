@@ -31,6 +31,10 @@ import {
 
 export type WorkLogToolLifecycleStatus = RuntimeItemStatus | "stopped" | "idle";
 
+export function planningWaitLabel(progressAtMs: number, nowMs: number): string {
+  return nowMs - progressAtMs >= 30_000 ? "Taking longer than expected" : "Planning next move";
+}
+
 export function toolItemForDisplay(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
   switch (item.type) {
     case "command_execution":
@@ -221,6 +225,15 @@ export function liveActivityToolStatus(status: string | undefined, presentTense:
   }
   if (presentTense || status === "inProgress") return "inProgress";
   return "completed";
+}
+
+export function preparingToolLabel(
+  entry: Pick<WorkLogPresentationEntry, "structuredPayload">,
+): string | null {
+  const item = entry.structuredPayload;
+  return item?.type === "dynamic_tool" && item.status === "pending"
+    ? `Preparing ${item.toolName ?? "tool"}`
+    : null;
 }
 
 export function resolveWorkEntryToolPresentation(

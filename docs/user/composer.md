@@ -361,3 +361,7 @@ including filenames or folders containing `#` or `?`.
 
 On mobile, select a PDF attachment or link to open it. iOS uses the native viewer;
 Android opens a compatible installed file viewer.
+
+## Response streaming
+
+Choose **Response streaming** in settings to show text as it arrives, wait for finished paragraphs, or wait for the whole response. Live streaming is the default when no mode has been saved. HTML and other interactive previews appear when their content is complete.

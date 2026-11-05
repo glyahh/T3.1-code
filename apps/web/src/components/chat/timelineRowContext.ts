@@ -43,6 +43,7 @@ export interface TurnItemSource {
 }
 
 export interface TimelineRowSharedState {
+  openedTextSequence?: number;
   pendingApprovals: ReadonlyMap<RuntimeRequestId, PendingApproval>;
   respondingRequestIds: ReadonlyArray<RuntimeRequestId>;
   canOperateThread: boolean;

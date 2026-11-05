@@ -119,18 +119,6 @@ export function describeComposerEffort(
         )}
       >
         <span className="relative inline-grid shrink-0 overflow-hidden align-middle">
-          {word !== null && primary ? (
-            <span
-              aria-hidden="true"
-              className="invisible col-start-1 row-start-1 flex h-0 overflow-hidden"
-            >
-              {primary.options.reduce(
-                (longest, option) =>
-                  option.label.length > longest.length ? option.label : longest,
-                word,
-              )}
-            </span>
-          ) : null}
           <span data-effort-motion className="col-start-1 row-start-1 inline-flex items-center">
             {word !== null ? (
               <span data-composer-control-label>{word}</span>

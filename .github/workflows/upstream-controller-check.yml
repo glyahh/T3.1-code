@@ -1,26 +1,123 @@
 name: Upstream Controller Checks
 on:
   push:
-    branches: [codex/personal-main, codex/upstream-workflow-setup]
+    branches: [codex/upstream/unattended-v0.1.7]
   workflow_dispatch:
+    inputs:
+      pr_number:
+        required: true
+        type: string
+      expected_head:
+        required: false
+        type: string
+      phase:
+        type: choice
+        options: [candidate, baseline]
+        default: candidate
 permissions:
   contents: read
+concurrency:
+  group: upstream-unattended-validation-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  controller:
+  validate:
+    if: github.repository_id == '1441172085'
     runs-on: ubuntu-latest
+    timeout-minutes: 180
     steps:
-      - name: Fetch public source without submodule traversal
+      - name: Resolve pinned test request
         env:
-          SOURCE_SHA: ${{ github.sha }}
+          TEST_PR: ${{ inputs.pr_number }}
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
+          TEST_PHASE: ${{ inputs.phase || 'candidate' }}
         run: |
-          git init .
-          git remote add origin https://github.com/glyahh/t3code.git
-          git sparse-checkout set --no-cone '/*' '!/.repos/'
-          git fetch --depth=1 origin "$SOURCE_SHA"
-          git checkout --detach FETCH_HEAD
-      - uses: actions/setup-node@v6
+          node --input-type=module <<'NODE'
+          import * as fs from 'node:fs';
+          const repo='glyahh/T3.1-code';
+          const endpoint=process.env.TEST_PR ? '/pulls/'+process.env.TEST_PR : '/pulls?state=open&base=codex/upstream-unattended-baseline&head=glyahh:codex/upstream/unattended-v0.1.7';
+          if(process.env.TEST_PR && !/^\d+$/.test(process.env.TEST_PR)) throw new Error('Invalid PR');
+          const response=await fetch('https://api.github.com/repos/'+repo+endpoint);
+          if(!response.ok) throw new Error('Cannot read test PR: '+response.status);
+          const value=await response.json();
+          const pr=Array.isArray(value)?(value.length===1?value[0]:null):value;
+          if(!pr || pr.state!=='open' || !pr.draft || pr.head.repo?.id!==1441172085 || pr.base.ref!=='codex/upstream-unattended-baseline' || pr.head.ref!=='codex/upstream/unattended-v0.1.7') throw new Error('Not the isolated test candidate');
+          const phase=process.env.TEST_PHASE;
+          const expected=process.env.EXPECTED_HEAD || (process.env.GITHUB_EVENT_NAME==='push'?process.env.GITHUB_SHA:pr.head.sha);
+          if(phase!=='baseline' && pr.head.sha!==expected) throw new Error('Stale candidate');
+          fs.writeFileSync(process.env.RUNNER_TEMP+'/upstream-test-event.json',JSON.stringify({pull_request:pr}));
+          fs.appendFileSync(process.env.GITHUB_ENV,'BASE_SHA='+pr.base.sha+'\nHEAD_SHA='+(phase==='baseline'?pr.base.sha:pr.head.sha)+'\nTEST_PHASE='+phase+'\n');
+          NODE
+      - name: Fetch pinned public code
+        run: |
+          for directory in control candidate; do
+            git init "$directory"
+            git -C "$directory" remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+            git -C "$directory" sparse-checkout set --no-cone '/*' '!/.repos/' '!/*.mp4'
+          done
+          git -C control fetch --filter=blob:none --no-recurse-submodules origin "$BASE_SHA"
+          git -C control checkout --detach FETCH_HEAD
+          git -C candidate fetch --filter=blob:none --no-recurse-submodules origin "$HEAD_SHA"
+          git -C candidate checkout --detach FETCH_HEAD
+          git -C candidate fetch --filter=blob:none --no-recurse-submodules https://github.com/pingdotgg/t3code.git refs/tags/v0.1.7
+          test "$(git -C candidate rev-parse FETCH_HEAD^{commit})" = 322f6544dfad0a3c8a0c8cbecf2c7f7874b14268
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
         with:
-          node-version: "24"
-      - run: node --test .github/upstream/controller.test.mjs
-      - run: node --check scripts/upstream-sync.mjs
-      - run: node --check scripts/upstream-verify.mjs
+          node-version-file: candidate/package.json
+          run-install: false
+          cache: false
+      - name: Install locked build dependencies
+        working-directory: candidate
+        run: vp install --frozen-lockfile
+      - name: Install existing native test build libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-dev pkg-config
+      - name: Ensure declared Electron test runtime
+        working-directory: candidate
+        run: vp run --filter @t3tools/desktop ensure:electron
+      - name: Install declared headless browser test runtime
+        working-directory: candidate
+        run: node apps/web/node_modules/playwright/cli.js install --with-deps --only-shell chromium
+      - name: Verify candidate with trusted baseline
+        if: env.TEST_PHASE != 'baseline'
+        working-directory: candidate
+        env:
+          TRUSTED_DIRECTORY: ${{ github.workspace }}/control
+          EVIDENCE_DIRECTORY: ${{ runner.temp }}/upstream-evidence
+          GITHUB_EVENT_PATH: ${{ runner.temp }}/upstream-test-event.json
+        run: node ../control/scripts/upstream-verify.mjs
+      - name: Measure personal baseline independently
+        if: env.TEST_PHASE == 'baseline'
+        working-directory: candidate
+        env:
+          EVIDENCE_DIRECTORY: ${{ runner.temp }}/upstream-evidence
+          UPSTREAM_OFFICIAL_SHA: 322f6544dfad0a3c8a0c8cbecf2c7f7874b14268
+        run: |
+          node --input-type=module <<'NODE'
+          import * as fs from 'node:fs';
+          import * as cp from 'node:child_process';
+          import * as path from 'node:path';
+          const trusted=path.resolve('../control');
+          const output=process.env.EVIDENCE_DIRECTORY;
+          fs.mkdirSync(output,{recursive:true});
+          const policy=JSON.parse(fs.readFileSync(path.join(trusted,'.github/upstream/policy.json'),'utf8'));
+          const checks=[];
+          for(const suite of policy.verification){
+            const log=fs.openSync(path.join(output,suite.name+'.log'),'w');
+            const args=suite.args.map(a=>a.replaceAll('{control}',trusted).replaceAll('{evidence}',output));
+            let result;
+            try { result=cp.spawnSync(suite.command,args,{stdio:['ignore',log,log],timeout:1200000,env:{...process.env,UPSTREAM_BASE_SHA:process.env.BASE_SHA,UPSTREAM_HEAD_SHA:process.env.HEAD_SHA}}); }
+            finally{fs.closeSync(log);}
+            checks.push({name:suite.name,exitCode:result.status,error:result.error?.message});
+          }
+          fs.writeFileSync(path.join(output,'baseline.json'),JSON.stringify({scope:'personal-baseline',baseSha:process.env.BASE_SHA,checks},null,2));
+          console.log(JSON.stringify(checks));
+          process.exitCode=checks.some(c=>c.exitCode!==0||c.error)?1:0;
+          NODE
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: upstream-test-${{ env.TEST_PHASE }}-${{ env.HEAD_SHA }}
+          path: ${{ runner.temp }}/upstream-evidence
+          if-no-files-found: error
+          retention-days: 90

@@ -61,6 +61,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { T3Wordmark } from "../../components/T3Wordmark";
 import { BrowserAppIcon } from "./BrowserAppIcon";
 import { useAppActive, useReduceMotionEnabled } from "../../lib/appState";
+import { useDeadlinePassed } from "../../lib/clock";
 import { cn } from "../../lib/cn";
 import { THREAD_WORK_ROW_MIN_HEIGHT, type deriveThreadWorkLogSizing } from "../../lib/layout";
 import {
@@ -81,6 +82,7 @@ import {
 } from "./thread-feed-live-follow";
 import {
   resolveWorkEntryToolPresentation,
+  planningWaitLabel,
   toolGroupAction,
   type ToolGroupSummaryKind,
   workEntryViewedImagePath,
@@ -259,6 +261,7 @@ export function ShimmeringWorkContent(props: {
   readonly icon: WorkContentIcon;
   readonly iconSubtleColor: ColorValue;
   readonly label: string;
+  readonly activityKey?: string | undefined;
   readonly showIcon: boolean;
   readonly themeAppearance?: "light" | "dark";
   readonly toolIcon?: ToolActivityIcon;
@@ -269,11 +272,43 @@ export function ShimmeringWorkContent(props: {
   const reducedMotion = useReduceMotionEnabled();
   const screenIsFocused = useIsFocused();
   const progress = useAnimatedValue(0);
+  const transition = useAnimatedValue(1);
+  const previousLabel = useRef<string | undefined>(undefined);
+  const [oldLabel, setOldLabel] = useState<string | null>(null);
+  const previousKey = useRef<string | undefined>(undefined);
+  const transitionKey = props.activityKey ?? props.label;
+  const readLabel = useEffectEvent(() => props.label);
   const gradientId = `work-shimmer-${useId().replaceAll(":", "")}`;
   const contentWidth = Math.min(
     availableWidth,
     (props.showIcon ? SHIMMER_ICON_AND_GAP_WIDTH : 0) + Math.ceil(textWidth),
   );
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- animates committed activity changes on the native driver and cancels on replacement or blur
+  useLayoutEffect(() => {
+    const previous = previousLabel.current;
+    previousLabel.current = readLabel();
+    const key = transitionKey;
+    const unchanged = previousKey.current === key;
+    previousKey.current = key;
+    transition.setValue(1);
+    if (unchanged || reducedMotion || !appIsActive || !screenIsFocused) return;
+    setOldLabel(previous ?? null);
+    transition.setValue(0);
+    const animation = NativeAnimated.timing(transition, {
+      toValue: 1,
+      duration: 300,
+      easing: Easing.bezier(0.22, 0.7, 0.2, 1),
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [transition, transitionKey, reducedMotion, appIsActive, screenIsFocused]);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- retains the latest committed activity title for the outgoing native layer
+  useLayoutEffect(() => {
+    previousLabel.current = props.label;
+  }, [props.label]);
 
   // Runs on React Native's native driver instead of Reanimated, whose
   // per-frame commits starve React's while commit pausing is disabled
@@ -309,77 +344,104 @@ export function ShimmeringWorkContent(props: {
   });
 
   return (
-    <View
-      className={cn("min-w-0 flex-1 overflow-hidden", props.className)}
-      onLayout={(event) => setAvailableWidth(event.nativeEvent.layout.width)}
-    >
-      <ShimmerWorkContent
-        textClassName={props.textClassName}
-        compact={props.compact}
-        environmentId={props.environmentId}
-        highlighted={false}
-        icon={props.icon}
-        iconSubtleColor={props.iconSubtleColor}
-        label={props.label}
-        showIcon={props.showIcon}
-        themeAppearance={props.themeAppearance}
-        toolIcon={props.toolIcon}
-        onTextLayout={(event) => setTextWidth(event.nativeEvent.lines[0]?.width ?? 0)}
-      />
-      {!reducedMotion && appIsActive && screenIsFocused && contentWidth > 0 ? (
+    <View style={{ overflow: "hidden" }}>
+      {oldLabel !== null ? (
         <NativeAnimated.View
-          pointerEvents="none"
-          accessible={false}
-          accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
+          pointerEvents="none"
+          accessibilityElementsHidden
           style={{
             position: "absolute",
-            top: 0,
-            bottom: 0,
-            left: 0,
-            overflow: "hidden",
-            width: SHIMMER_WIDTH,
-            transform: [{ translateX: sweepTranslateX }],
+            opacity: transition.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+            transform: [
+              { translateY: transition.interpolate({ inputRange: [0, 1], outputRange: [0, -26] }) },
+            ],
           }}
         >
-          <MaskedView
-            style={StyleSheet.absoluteFill}
-            maskElement={
-              <Svg width="100%" height="100%">
-                <Defs>
-                  <LinearGradient id={gradientId} x1="0%" x2="100%" y1="0%" y2="0%">
-                    <Stop offset="0" stopColor="white" stopOpacity={0} />
-                    <Stop offset="0.15" stopColor="white" stopOpacity={0.12} />
-                    <Stop offset="0.35" stopColor="white" stopOpacity={0.55} />
-                    <Stop offset="0.5" stopColor="white" stopOpacity={1} />
-                    <Stop offset="0.65" stopColor="white" stopOpacity={0.55} />
-                    <Stop offset="0.85" stopColor="white" stopOpacity={0.12} />
-                    <Stop offset="1" stopColor="white" stopOpacity={0} />
-                  </LinearGradient>
-                </Defs>
-                <Rect width="100%" height="100%" fill={`url(#${gradientId})`} />
-              </Svg>
-            }
-          >
-            <NativeAnimated.View
-              style={{ width: availableWidth, transform: [{ translateX: counterSweepTranslateX }] }}
-            >
-              <ShimmerWorkContent
-                textClassName={props.textClassName}
-                compact={props.compact}
-                environmentId={props.environmentId}
-                highlighted
-                icon={props.icon}
-                iconSubtleColor={props.iconSubtleColor}
-                label={props.label}
-                showIcon={props.showIcon}
-                themeAppearance={props.themeAppearance}
-                toolIcon={props.toolIcon}
-              />
-            </NativeAnimated.View>
-          </MaskedView>
+          <ShimmerWorkContent {...props} label={oldLabel} highlighted={false} />
         </NativeAnimated.View>
       ) : null}
+      <NativeAnimated.View
+        className={cn("min-w-0 flex-1 overflow-hidden", props.className)}
+        onLayout={(event) => setAvailableWidth(event.nativeEvent.layout.width)}
+        style={{
+          opacity: transition,
+          transform: [
+            { translateY: transition.interpolate({ inputRange: [0, 1], outputRange: [26, 0] }) },
+          ],
+        }}
+      >
+        <ShimmerWorkContent
+          textClassName={props.textClassName}
+          compact={props.compact}
+          environmentId={props.environmentId}
+          highlighted={false}
+          icon={props.icon}
+          iconSubtleColor={props.iconSubtleColor}
+          label={props.label}
+          showIcon={props.showIcon}
+          themeAppearance={props.themeAppearance}
+          toolIcon={props.toolIcon}
+          onTextLayout={(event) => setTextWidth(event.nativeEvent.lines[0]?.width ?? 0)}
+        />
+        {!reducedMotion && appIsActive && screenIsFocused && contentWidth > 0 ? (
+          <NativeAnimated.View
+            pointerEvents="none"
+            accessible={false}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              left: 0,
+              overflow: "hidden",
+              width: SHIMMER_WIDTH,
+              transform: [{ translateX: sweepTranslateX }],
+            }}
+          >
+            <MaskedView
+              style={StyleSheet.absoluteFill}
+              maskElement={
+                <Svg width="100%" height="100%">
+                  <Defs>
+                    <LinearGradient id={gradientId} x1="0%" x2="100%" y1="0%" y2="0%">
+                      <Stop offset="0" stopColor="white" stopOpacity={0} />
+                      <Stop offset="0.15" stopColor="white" stopOpacity={0.12} />
+                      <Stop offset="0.35" stopColor="white" stopOpacity={0.55} />
+                      <Stop offset="0.5" stopColor="white" stopOpacity={1} />
+                      <Stop offset="0.65" stopColor="white" stopOpacity={0.55} />
+                      <Stop offset="0.85" stopColor="white" stopOpacity={0.12} />
+                      <Stop offset="1" stopColor="white" stopOpacity={0} />
+                    </LinearGradient>
+                  </Defs>
+                  <Rect width="100%" height="100%" fill={`url(#${gradientId})`} />
+                </Svg>
+              }
+            >
+              <NativeAnimated.View
+                style={{
+                  width: availableWidth,
+                  transform: [{ translateX: counterSweepTranslateX }],
+                }}
+              >
+                <ShimmerWorkContent
+                  textClassName={props.textClassName}
+                  compact={props.compact}
+                  environmentId={props.environmentId}
+                  highlighted
+                  icon={props.icon}
+                  iconSubtleColor={props.iconSubtleColor}
+                  label={props.label}
+                  showIcon={props.showIcon}
+                  themeAppearance={props.themeAppearance}
+                  toolIcon={props.toolIcon}
+                />
+              </NativeAnimated.View>
+            </MaskedView>
+          </NativeAnimated.View>
+        ) : null}
+      </NativeAnimated.View>
     </View>
   );
 }
@@ -1422,13 +1484,19 @@ export function ThreadWorkGroupToggle(props: {
 }
 
 export function ThreadThinkingRow(props: {
+  readonly label?: string | undefined;
+  readonly activityKey?: string | undefined;
+  readonly progressAt: string;
   readonly rowSizing: ReturnType<typeof deriveThreadWorkLogSizing>;
   readonly iconSubtleColor: ColorValue;
 }) {
+  const progressAt = Date.parse(props.progressAt);
+  const slow = useDeadlinePassed(Number.isFinite(progressAt) ? progressAt + 30_000 : null);
+  const label = props.label ?? planningWaitLabel(0, slow ? 30_000 : 0);
   return (
     <View
       accessible
-      accessibilityLabel="Thinking"
+      accessibilityLabel={label}
       className="-mx-1 min-h-8 flex-row items-center px-1.5 py-0"
       style={{ minHeight: props.rowSizing.estimatedRowHeight }}
     >
@@ -1436,7 +1504,8 @@ export function ThreadThinkingRow(props: {
         key={props.rowSizing.textSizeKey}
         icon="brain"
         iconSubtleColor={props.iconSubtleColor}
-        label="Thinking"
+        label={label}
+        activityKey={props.activityKey ?? (slow ? "slow" : "planning")}
         showIcon
       />
     </View>

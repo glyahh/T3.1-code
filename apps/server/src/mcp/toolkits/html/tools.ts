@@ -24,7 +24,7 @@ const PAGE_RULES =
   "Inline <style> and <script>. Local images as absolute paths are inlined. Remote URLs load as-is.";
 
 export const HtmlPreviewTool = Tool.make("html_preview", {
-  description: `Check an HTML page before html_render. Returns PNG, contentHeight, and console output. If it says the browser is still installing, call again in a minute. ${PAGE_RULES} Theme and layout rules are in html_render.`,
+  description: `Check an HTML page before html_render. Returns previewId, PNG, contentHeight, and console output. Reuse previewId in html_render when unchanged; after edits preview again. If it says the browser is still installing, call again in a minute. ${PAGE_RULES} Theme and layout rules are in html_render.`,
   parameters: Schema.Struct({
     html: Html,
     width: Schema.optional(
@@ -39,6 +39,7 @@ export const HtmlPreviewTool = Tool.make("html_preview", {
     ),
   }),
   success: Schema.Struct({
+    previewId: Schema.optional(Schema.String),
     width: Schema.Int,
     contentHeight: Schema.Int,
     capturedHeight: Schema.Int,
@@ -73,7 +74,13 @@ export const HtmlPreviewTool = Tool.make("html_preview", {
 const HtmlRenderTool = Tool.make(HTML_RENDER_TOOL_NAME, {
   description: `Show a finished HTML page (chart, diagram, mockup) inline in this thread, above your final reply. Do not announce or restate the page. Frame fits height to ${HTML_RENDER_MAX_FIT_HEIGHT}px. On mobile, content past the given height scrolls. ${HTML_RENDER_LAYOUT_GUIDE} ${HTML_RENDER_THEME_GUIDE}`,
   parameters: Schema.Struct({
-    html: Html,
+    html: Schema.optional(Html),
+    previewId: Schema.optional(
+      Schema.String.annotate({
+        description:
+          "Use the unchanged page from html_preview instead of repeating HTML. Supply exactly one of html or previewId.",
+      }),
+    ),
     title: Schema.String.check(
       Schema.isMinLength(1),
       Schema.isMaxLength(HTML_RENDER_MAX_TITLE_LENGTH),

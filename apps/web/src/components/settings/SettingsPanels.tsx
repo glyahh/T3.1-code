@@ -108,11 +108,13 @@ import { awaitsTrackSwitch, channelSwitchLabel } from "../sidebar/updateEverythi
 import { isHostedByThisApp } from "../sidebar/useUpdateEverything";
 
 const RESPONSE_STREAMING_MODE_LABELS: Record<ResponseStreamingMode, string> = {
+  live: "Live",
   turn: "Wait for the full response",
   paragraph: "Show finished paragraphs",
 };
 
 const RESPONSE_STREAMING_MODE_DESCRIPTIONS: Record<ResponseStreamingMode, string> = {
+  live: "Show text as it arrives.",
   turn: "Text appears once the agent finishes its turn.",
   paragraph: "Each paragraph or code block appears as soon as it is complete.",
 };
@@ -1959,6 +1961,14 @@ export function ThreadsSettingsPanel() {
                   </SelectValue>
                 </SelectTrigger>
                 <SelectPopup align="end" alignItemWithTrigger={false}>
+                  {connectedEnvironments.length > 0 &&
+                  connectedEnvironments.every(
+                    (target) => target.serverConfig?.liveResponseStreaming === true,
+                  ) ? (
+                    <SelectItem hideIndicator value="live">
+                      {RESPONSE_STREAMING_MODE_LABELS.live}
+                    </SelectItem>
+                  ) : null}
                   <SelectItem hideIndicator value="turn">
                     {RESPONSE_STREAMING_MODE_LABELS.turn}
                   </SelectItem>

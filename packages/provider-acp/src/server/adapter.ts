@@ -3976,11 +3976,26 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
          * Notices have no id; each is its own item, numbered by the turn's item count.
          * A notice is not conversation content, so an open message keeps streaming across it.
          */
+        let diagnosticContext: ActiveAcpTurn | null = null;
+        const activeDiagnostics = new Set<string>();
+        const resolveDiagnostics = Effect.fn("AcpAdapterV2.resolveDiagnostics")(function* (
+          context: ActiveAcpTurn,
+        ) {
+          if (diagnosticContext !== context) return;
+          for (const title of activeDiagnostics)
+            yield* emitNotice(context, { title, key: `diagnostic:${title}` });
+          activeDiagnostics.clear();
+        });
         const emitNotice = Effect.fnUntraced(function* (
           context: ActiveAcpTurn,
-          notice: { readonly title: string; readonly description?: string },
+          notice: {
+            readonly title: string;
+            readonly description?: string;
+            readonly key?: string;
+            readonly running?: boolean;
+          },
         ) {
-          const nativeItemId = `${context.nativeTurnId}:notice:${context.itemOrdinals.size}`;
+          const nativeItemId = `${context.nativeTurnId}:notice:${notice.key ?? context.itemOrdinals.size}`;
           const now = yield* DateTime.now;
           yield* emitProviderEvent({
             type: "turn_item.updated",
@@ -3996,14 +4011,14 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               parentItemId: null,
               ordinal: yield* resolveItemOrdinal(context, nativeItemId),
               type: "system_notice",
-              status: "completed",
+              status: notice.running ? "running" : "completed",
               title: notice.title,
               message:
                 notice.description === undefined
                   ? notice.title
                   : `${notice.title}\n\n${notice.description}`,
               startedAt: now,
-              completedAt: now,
+              completedAt: notice.running ? null : now,
               updatedAt: now,
             },
           });
@@ -4616,6 +4631,15 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         ) {
           const context = yield* Ref.get(activeTurn);
           const update = notification.update;
+          if (
+            context !== null &&
+            notification.sessionId === (yield* Ref.get(activeSessionId)) &&
+            (update.sessionUpdate === "agent_message_chunk" ||
+              update.sessionUpdate === "agent_thought_chunk" ||
+              update.sessionUpdate === "tool_call" ||
+              update.sessionUpdate === "tool_call_update")
+          )
+            yield* resolveDiagnostics(context);
           if (
             followsAgentWorkState &&
             flavor.extractSubagentSessionEvent !== undefined &&
@@ -6047,7 +6071,23 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               }
               return runRuntimeCallbackAtGeneration(
                 handlerGeneration,
-                flavor.onSessionEvent?.(event) ?? Effect.void,
+                Effect.gen(function* () {
+                  if (event._tag === "RuntimeDiagnostic") {
+                    const context = yield* Ref.get(activeTurn);
+                    if (context === null || context.finalized) return;
+                    if (diagnosticContext !== context) {
+                      diagnosticContext = context;
+                      activeDiagnostics.clear();
+                    }
+                    if (activeDiagnostics.has(event.title)) return;
+                    activeDiagnostics.add(event.title);
+                    yield* emitNotice(context, {
+                      title: event.title,
+                      key: `diagnostic:${event.title}`,
+                      running: true,
+                    });
+                  } else yield* flavor.onSessionEvent?.(event) ?? Effect.void;
+                }),
               ).pipe(Effect.asVoid);
             }),
             Effect.forkIn(runtimeScope ?? sessionScope),
@@ -7133,6 +7173,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           context.finalizedStatus = settledStatus;
           context.finalized = true;
           const directStopQuarantine = yield* Ref.get(stoppedRunQuarantine);
+          yield* resolveDiagnostics(context);
           if (flavor.subagentsIdleOnTurnCompletion === true) {
             for (const subagent of context.subagents.values()) {
               if (!acpSubagentStatusBlocksTurnSettlement(subagent.task.status)) continue;

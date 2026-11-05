@@ -1301,6 +1301,7 @@ export const OrchestrationV2ConversationMessage = Schema.Struct({
   context: Schema.optional(OrchestrationMessageContext),
   attachments: Schema.Array(ChatAttachment),
   streaming: Schema.Boolean,
+  phase: Schema.optional(Schema.Literals(["commentary", "partial_answer", "final_answer"])),
   createdAt: Schema.DateTimeUtc,
   updatedAt: Schema.DateTimeUtc,
   delegatedCompletion: Schema.optional(
@@ -1606,6 +1607,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
     type: Schema.Literal("assistant_message"),
+    phase: Schema.optional(Schema.Literals(["commentary", "partial_answer", "final_answer"])),
     messageId: MessageId,
     text: Schema.String,
     textOmitted: DedupedBodyMarker,
@@ -2436,6 +2438,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
     type: Schema.Literal("assistant_message"),
+    phase: Schema.optional(Schema.Literals(["commentary", "partial_answer", "final_answer"])),
     messageId: MessageId,
     text: Schema.String,
     attachments: Schema.optional(Schema.Array(ChatAttachment)),

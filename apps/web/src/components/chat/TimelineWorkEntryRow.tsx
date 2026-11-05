@@ -40,6 +40,7 @@ import { useAssetUrls } from "../../assets/assetUrls";
 import { useThreadShell } from "../../state/entities";
 import {
   threadReadLabelPrefix,
+  liveWorkEntryLabel,
   threadReadTargetId,
   threadReadTargetTitle,
   workEntryDisplayLabel,
@@ -66,8 +67,6 @@ import {
   workEntryRawCommand,
   buildToolCallExpandedBody,
   workEntryIconName,
-  THINKING_PREVIEW_PLUGINS,
-  THOUGHT_PREVIEW_PLUGINS,
 } from "./TimelineWorkEntryRow.logic";
 
 export function useThreadReadTarget(entry: TimelineWorkEntry, environmentId: EnvironmentId) {
@@ -290,12 +289,11 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
   const questionHeading = workEntry.questionAnswer
     ? getQuestionTextPreview(workEntry.questionAnswer)
     : "";
-  const previewText =
-    isReasoning && expanded
-      ? workEntry.toolLifecycleStatus === "inProgress"
-        ? "Thinking"
-        : thoughtLabel([workEntry])
-      : questionHeading || (displayLabel ?? workEntryDisplayLabel(workEntry, workspaceRoot));
+  const previewText = isReasoning
+    ? workEntry.toolLifecycleStatus === "inProgress"
+      ? liveWorkEntryLabel(workEntry, workspaceRoot, true)
+      : thoughtLabel([workEntry])
+    : questionHeading || (displayLabel ?? workEntryDisplayLabel(workEntry, workspaceRoot));
   const answerPreview =
     workEntry.questionAnswer && hasQuestionAnswer(workEntry.questionAnswer)
       ? getQuestionAnswerPreview(workEntry.questionAnswer)
@@ -426,19 +424,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
                   headingClass,
                 )}
               >
-                {isReasoning && !expanded ? (
-                  <ChatMarkdown
-                    inline
-                    text={workEntry.detail ?? previewText}
-                    cwd={ctx.markdownCwd}
-                    parseRawHtml={false}
-                    extraRemarkPlugins={
-                      workEntry.toolLifecycleStatus === "inProgress"
-                        ? THINKING_PREVIEW_PLUGINS
-                        : THOUGHT_PREVIEW_PLUGINS
-                    }
-                  />
-                ) : threadLabel ? (
+                {threadLabel ? (
                   <ThreadReadLabel
                     label={threadLabel}
                     environmentId={ctx.activeThreadEnvironmentId}

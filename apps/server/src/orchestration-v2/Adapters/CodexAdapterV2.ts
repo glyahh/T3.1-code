@@ -3251,6 +3251,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
         });
 
         // Reasoning and assistant-text coalescers build these artifacts on every streamed update.
+        const messagePhases = new Map<string, "commentary" | "partial_answer" | "final_answer">();
         const buildAgentMessageArtifacts = Effect.fnUntraced(function* (
           context: ActiveCodexTurnContext,
           item: { readonly id: string; readonly text: string },
@@ -3299,6 +3300,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             text: item.text,
             attachments: [],
             streaming: !completed,
+            ...(messagePhases.has(`${context.nativeTurnId}\0${item.id}`)
+              ? { phase: messagePhases.get(`${context.nativeTurnId}\0${item.id}`)! }
+              : {}),
             createdAt: startedAt,
             updatedAt,
           };
@@ -3321,6 +3325,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             messageId,
             text: item.text,
             streaming: !completed,
+            ...(messagePhases.has(`${context.nativeTurnId}\0${item.id}`)
+              ? { phase: messagePhases.get(`${context.nativeTurnId}\0${item.id}`)! }
+              : {}),
           };
           return { node, message, turnItem };
         });
@@ -4784,6 +4791,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             }
 
             if (payload.item.type === "agentMessage") {
+              if (payload.item.phase) {
+                if (messagePhases.size >= 512)
+                  messagePhases.delete(messagePhases.keys().next().value!);
+                messagePhases.set(`${payload.turnId}\0${payload.item.id}`, payload.item.phase);
+              }
               if (payload.item.phase == null || payload.item.phase === "final_answer") {
                 yield* Ref.update(finalAnswerItemIdsByTurn, (current) => {
                   const updated = new Map(current);

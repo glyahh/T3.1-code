@@ -1169,6 +1169,8 @@ export function createServerEnvironmentAtoms<R, E>(
   const updateSettings = createEnvironmentRpcCommand(runtime, {
     label: "environment-data:server:update-settings",
     tag: WS_METHODS.serverUpdateSettings,
+    execute: (input) =>
+      requestGuarded(WS_METHODS.serverUpdateSettings, { ...input, liveResponseStreaming: true }),
     scheduler: configScheduler,
     concurrency: configConcurrency,
   });

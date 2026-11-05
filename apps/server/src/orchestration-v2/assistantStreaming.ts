@@ -1,4 +1,15 @@
 import type { ResponseStreamingMode } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
+import * as Queue from "effect/Queue";
+import * as Semaphore from "effect/Semaphore";
+import * as Clock from "effect/Clock";
+import * as Exit from "effect/Exit";
+import {
+  makeLiveStreamBudget,
+  type RetainedLiveItem,
+  type LiveStreamBufferError,
+} from "./LiveStreamBudget.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 
 // List fences can open at any indentation; closers may be at most three spaces deeper.
@@ -93,6 +104,7 @@ export function makeAssistantStreamingFilter(mode: ResponseStreamingMode) {
       delivered.delete(key);
       return event;
     }
+    if (mode === "live") return event;
     if (mode === "turn") return null;
     const previous = delivered.get(key);
     if (previous && now - previous.at < 400) return null;
@@ -108,4 +120,126 @@ export function makeAssistantStreamingFilter(mode: ResponseStreamingMode) {
       return { ...event, turnItem: { ...event.turnItem, text: ready } };
     return event;
   };
+}
+
+function liveMessageKey(event: ProviderAdapter.ProviderAdapterV2Event): string | null {
+  if (
+    event.type === "message.updated" &&
+    event.message.role === "assistant" &&
+    event.message.streaming
+  )
+    return `message:${event.message.id}`;
+  if (
+    event.type === "turn_item.updated" &&
+    (event.turnItem.type === "assistant_message" || event.turnItem.type === "reasoning") &&
+    event.turnItem.streaming
+  )
+    return `item:${event.turnItem.id}`;
+  return null;
+}
+
+export function coalesceLiveAssistantEvents<E, R>(
+  source: Stream.Stream<ProviderAdapter.ProviderAdapterV2Event, E, R>,
+) {
+  return Stream.unwrap(
+    Effect.gen(function* () {
+      const scope = yield* Effect.scope;
+      const budget = yield* makeLiveStreamBudget({ maxItems: 512 });
+      const output = yield* Queue.bounded<
+        RetainedLiveItem<ProviderAdapter.ProviderAdapterV2Event>,
+        E | LiveStreamBufferError | import("effect/Cause").Done
+      >(512);
+      const emit = (event: ProviderAdapter.ProviderAdapterV2Event) =>
+        budget.retain(event).pipe(Effect.flatMap((retained) => Queue.offer(output, retained)));
+      const mutex = yield* Semaphore.make(1);
+      const pending = new Map<string, ProviderAdapter.ProviderAdapterV2Event>();
+      const lastSent = new Map<string, number>();
+      const timers = new Set<string>();
+      let closed = false;
+      const flush = Effect.gen(function* () {
+        const now = yield* Clock.currentTimeMillis;
+        for (const [key, event] of pending) {
+          yield* emit(event);
+          lastSent.set(key, now);
+        }
+        pending.clear();
+      });
+      const flushKey = (key: string): Effect.Effect<void, LiveStreamBufferError> =>
+        Effect.suspend(() =>
+          mutex
+            .withPermits(1)(
+              Effect.gen(function* () {
+                const event = pending.get(key);
+                if (closed || event === undefined) {
+                  timers.delete(key);
+                  return 0;
+                }
+                const now = yield* Clock.currentTimeMillis;
+                const remaining = 50 - (now - (lastSent.get(key) ?? -Infinity));
+                if (remaining > 0) return remaining;
+                pending.delete(key);
+                timers.delete(key);
+                lastSent.set(key, now);
+                yield* emit(event);
+                return 0;
+              }),
+            )
+            .pipe(
+              Effect.flatMap((remaining) =>
+                remaining > 0
+                  ? Effect.sleep(`${remaining} millis`).pipe(Effect.andThen(flushKey(key)))
+                  : Effect.void,
+              ),
+            ),
+        );
+      const offer = (event: ProviderAdapter.ProviderAdapterV2Event) =>
+        mutex.withPermits(1)(
+          Effect.gen(function* () {
+            if (closed) return;
+            const key = liveMessageKey(event);
+            const now = yield* Clock.currentTimeMillis;
+            if (key === null) {
+              yield* flush;
+              yield* emit(event);
+              return;
+            }
+            if (now - (lastSent.get(key) ?? -Infinity) >= 50) {
+              pending.delete(key);
+              lastSent.set(key, now);
+              yield* emit(event);
+            } else {
+              pending.set(key, event);
+              if (!timers.has(key)) {
+                timers.add(key);
+                yield* Effect.sleep("50 millis").pipe(
+                  Effect.andThen(flushKey(key)),
+                  Effect.ignore,
+                  Effect.forkIn(scope),
+                );
+              }
+            }
+          }),
+        );
+      yield* source.pipe(
+        Stream.runForEach(offer),
+        Effect.exit,
+        Effect.flatMap((exit) =>
+          mutex.withPermits(1)(
+            Effect.gen(function* () {
+              yield* flush;
+              closed = true;
+              if (Exit.isFailure(exit)) yield* Queue.failCause(output, exit.cause);
+              else yield* Queue.end(output);
+            }),
+          ),
+        ),
+        Effect.catchCause((cause) => {
+          closed = true;
+          return Queue.failCause(output, cause);
+        }),
+        Effect.forkScoped({ startImmediately: true }),
+      );
+      return budget.deliver(Stream.fromQueue(output));
+    }),
+  );
 }
