@@ -2,19 +2,25 @@
 
 此工作流由 GitHub 管理候选，Codex Cloud 通过订阅执行修改，GitHub 执行独立验证。本机无需构建。保留 Fork 关系，正式合并、安装和发布均由维护者决定。控制代码的部署也须先经维护者审阅。
 
-默认执行路径为 `UPSTREAM_SYNC_EXECUTOR=codex-cloud`，由候选 PR 中的任务评论启动 GitHub 集成支持的 Codex 云端环境。原生云端环境显示可用，不代表旧评论入口已接通。环境存在、任务评论已发送和云端实际执行是不同状态，必须通过本仓库的接入试跑核实。机器人回复要求创建环境时，后续检查明确报告受阻，不继续投递相同任务。
+默认执行路径为 `UPSTREAM_SYNC_EXECUTOR=codex-cloud-native`，直接使用已发布的 `t3code` Codex 云端环境。GitHub 负责准备候选和发布 `t3-codex-cloud-native` 交接标记；原生云端任务读取候选并执行 `.github/upstream/worker.md`。交接标记不会自行启动环境，必须有绑定该环境的原生任务来消费。环境可用、候选已准备、任务实际执行及成功回写分别验证。
 
-`work-cloud` 是可选的独立执行路径：控制器只发布交接标记，需要另外配置遵循 `.github/upstream/worker.md` 的云端定时任务。不能把它与 Codex 云端环境混用，也不能把自动审查成功当成修改任务启动成功。评论入口曾报缺少环境，参见 [OpenAI 问题 #20093](https://github.com/openai/codex/issues/20093)；不得导出订阅登录缓存绕过此问题。
+`codex-cloud` 仅用于仍配置了 GitHub 旧集成环境的兼容路径；它与新版原生云端环境不同，不能把已发布的原生环境 ID 传给旧 CLI 或评论入口。旧机器人要求创建环境时报告受阻，不重复投递。`work-cloud` 保留为另外配置的 Work Cloud 执行器路径，不消费原生 Codex 标记，也不默认创建此类任务。参见 [官方云端环境说明](https://learn.chatgpt.com/docs/environments/cloud-environments)。不得导出订阅登录缓存绕过入口差异。
 
 仓库身份固定为 GitHub ID `1441172085`。控制器与验证器按 ID 拒绝其他仓库，从 Actions 提供的当前仓库名称获取代码；改名不改变身份，也不要求解除 Fork。`policy.repository` 仅记录可读名称，官方上游仍为 `pingdotgg/t3code`。
 
 ## 首次接入
 
 1. 将个人功能及同步代码放入 `codex/personal-main`。将控制工作流、脚本和 `.github/upstream/` 同步到默认分支；无需改变默认分支的产品代码。定时任务只从默认分支运行。
-2. 在 Codex 的 GitHub 集成设置连接 `glyahh/T3.1-code`，配置供 GitHub 任务使用的云端环境，安装仓库规定的 Node、pnpm、Vite+。允许获取 GitHub 官方代码及安装依赖，测试状态使用独立 `.t3`，不提供正式数据库或真实安装目录。使用 `codex-cloud` 时不需要另建 Work Cloud 定时任务。
+2. 在 Codex 中选择现有的 `t3code` 云端环境，确认已发布、可运行且关联本仓库。通过原生云端入口启动任务；环境中应有仓库规定的 Node、pnpm、Vite+。允许获取 GitHub 官方代码及安装依赖，测试状态使用独立 `.t3`，不提供正式数据库或真实安装目录。不必重新创建旧 GitHub 集成环境或 Work Cloud 环境。
 3. 创建归属已绑定 Codex 的 `glyahh` 账号的细粒度 GitHub 令牌，仅授权本仓库 Contents 和 Pull requests 读写，保存为 Actions secret `UPSTREAM_SYNC_TOKEN`。令牌只供默认分支控制器使用。不要上传 Codex `auth.json`。令牌过期需替换；不要在聊天或日志中粘贴令牌。
-4. 保持仓库变量 `UPSTREAM_SYNC_ENABLED` 缺失或为 `false`，设置 `UPSTREAM_SYNC_EXECUTOR=codex-cloud`。手动运行 **Upstream Sync**，选择 `canary`。控制器固定本次工作流提交；手动选择测试分支时运行该分支控制器，定时运行默认分支控制器。确认 Codex 实际启动云端任务、修改推回接入草稿，并出现独立验证报告。接入候选故意不能通过正式合并门禁，不以绿色代码审查或任务评论代替回写证据。
+4. 保持仓库变量 `UPSTREAM_SYNC_ENABLED` 缺失或为 `false`，设置 `UPSTREAM_SYNC_EXECUTOR=codex-cloud-native`。手动运行 **Upstream Sync**，选择 `canary`。控制器固定本次工作流提交；手动选择测试分支时运行该分支控制器，定时运行默认分支控制器。随后在现有原生云端环境执行该候选，确认真实测试、回写和独立验证报告。接入候选故意不能通过正式合并门禁，不以绿色代码审查或交接评论代替回写证据。
 5. 维护者审阅控制代码并部署到默认分支，确认 `codex/personal-main` 是待维护的个人基线；未提交及其他分支中的改动不会自动进入该基线。关闭接入草稿。接入测试未完整通过前，不启用定时。成功后设置变量 `UPSTREAM_SYNC_ENABLED=true`，每小时第 17 分钟补查版本。GitHub 可能延迟定时任务，公开仓库长期不活动也可能停用计划；可用手动 `scan` 补查。默认分支尚未部署、云端无法执行或回写失败时保持关闭。
+
+## 不合并 PR 的接入测试
+
+在现有 `t3code` 云端环境中新建任务，让它处理隔离的接入草稿，并给出明确的仓库、PR、来源与目标分支、当前候选 SHA。只允许运行控制器测试和两个脚本的语法检查；成功后只在 `request.json` 追加绑定原候选 SHA 的 `cloudExecution` 回执。回写前重查头提交，禁止强推、合并、安装和发布。
+
+在 GitHub 核对回写提交只改变 `request.json`，在原生云端任务中核对命令退出码和执行位置。再次检查相同候选时应读取已有回执，不重复提交。此测试不需要合并控制 PR；它证明环境执行和候选回写，不证明自动定时已启用或产品升级已验收。自动运行还需要将原生任务绑定到该环境的调度，并在控制代码部署后单独验收。
 
 ## 验证与证据
 

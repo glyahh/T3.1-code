@@ -39,5 +39,5 @@ jobs:
           GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN }}
           SYNC_OWNER: glyahh
           SYNC_MODE: ${{ inputs.mode || 'scan' }}
-          SYNC_EXECUTOR: ${{ vars.UPSTREAM_SYNC_EXECUTOR || 'codex-cloud' }}
+          SYNC_EXECUTOR: ${{ vars.UPSTREAM_SYNC_EXECUTOR || 'codex-cloud-native' }}
         run: node scripts/upstream-sync.mjs
