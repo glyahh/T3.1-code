@@ -9,7 +9,10 @@
   "rolledBack": false,
   "personalSourceSha": "d1f91c5139becaaed79a266bf13b5faee4577e53",
   "execution": {
-    "status": "pending",
-    "round": 0
+    "status": "running",
+    "round": 1,
+    "owner": "8e3239f5-28fa-45c0-934a-119eac3539bf",
+    "startedAt": "2026-11-05T13:25:00Z",
+    "source": "manual-native"
   }
 }
