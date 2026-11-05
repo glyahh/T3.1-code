@@ -32,8 +32,8 @@ export const entries = (sha, paths) => {
   for (let index = 0; index < paths.length; index += 100) {
     const output = git("ls-tree", "-z", sha, "--", ...paths.slice(index, index + 100));
     for (const entry of output.split("\0").filter(Boolean)) {
-      const [metadata, path] = entry.split("\t");
-      result.set(path, metadata.split(" ")[2]);
+      const separator = entry.indexOf("\t");
+      result.set(entry.slice(separator + 1), entry.slice(0, separator));
     }
   }
   return result;
