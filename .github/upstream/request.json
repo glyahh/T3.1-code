@@ -1,0 +1,15 @@
+{
+  "repositoryId": 1441172085,
+  "key": "9ad2e510539fc3413b4fabad2a756340c1dc8153fa9601d2d4254c9e4d866ee4",
+  "upstreamSha": "322f6544dfad0a3c8a0c8cbecf2c7f7874b14268",
+  "personalSha": "69fc9d966999a272b21c393485297786d5d937f7",
+  "policyHash": "2161f8e3247aa7f888e9ceb3a70c144f98d0d119ce3fbf743a82fa339d9949a5",
+  "tag": "v0.1.7",
+  "canary": false,
+  "rolledBack": false,
+  "personalSourceSha": "d1f91c5139becaaed79a266bf13b5faee4577e53",
+  "execution": {
+    "status": "pending",
+    "round": 0
+  }
+}
