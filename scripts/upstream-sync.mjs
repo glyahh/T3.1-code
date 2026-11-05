@@ -20,6 +20,16 @@ export const stableReleases = (releases) =>
 export const digest = (value) => NodeCrypto.createHash("sha256").update(value).digest("hex");
 export const requestKey = (upstreamSha, personalSha, policyHash) =>
   digest([upstreamSha, personalSha, policyHash].join(":"));
+export const resolveRepository = (policy, environment = process.env) => {
+  if (
+    !Number.isSafeInteger(policy.repositoryId) ||
+    String(policy.repositoryId) !== environment.GITHUB_REPOSITORY_ID
+  )
+    throw new Error("Repository does not match trusted repository");
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(environment.GITHUB_REPOSITORY || ""))
+    throw new Error("Invalid repository name");
+  return environment.GITHUB_REPOSITORY;
+};
 export const evidenceComplete = (report, required, base, head) =>
   report?.baseSha === base &&
   report?.headSha === head &&
@@ -55,8 +65,7 @@ export const parseRequest = (body = "") => {
 async function main() {
   const policyText = NodeFS.readFileSync(".github/upstream/policy.json", "utf8");
   const policy = JSON.parse(policyText);
-  if (process.env.GITHUB_REPOSITORY !== policy.repository)
-    throw new Error("Repository does not match trusted policy");
+  const repository = resolveRepository(policy);
   const policyHash = digest(policyText);
   const mode = process.env.SYNC_MODE || "scan";
   const executor = process.env.SYNC_EXECUTOR || "codex-cloud";
@@ -85,7 +94,7 @@ async function main() {
       if (chunk.length < 100) return rows;
     }
   };
-  const repo = `repos/${policy.repository}`;
+  const repo = `repos/${repository}`;
   const identity = await api("user");
   if (identity.login !== process.env.SYNC_OWNER)
     throw new Error("Task token must belong to the linked Codex owner");
@@ -94,20 +103,31 @@ async function main() {
   );
   const managed = pulls.filter(
     (pr) =>
-      pr.head.repo?.full_name === policy.repository &&
+      pr.head.repo?.id === policy.repositoryId &&
       pr.head.ref.startsWith(policy.candidatePrefix) &&
       pr.body?.includes(marker),
   );
   const personal = await api(`${repo}/git/ref/heads/${policy.personalBranch}`);
   const personalSha = personal.object.sha;
   git("fetch", "--no-tags", "origin", personalSha);
+  const personalPolicy = NodeChildProcess.execFileSync(
+    "git",
+    ["show", `${personalSha}:.github/upstream/policy.json`],
+    { encoding: "utf8" },
+  );
+  if (digest(personalPolicy) !== policyHash)
+    throw new Error("Personal baseline policy differs; deploy the reviewed policy before syncing");
   const open = managed.filter((pr) => pr.state === "open");
   if (open.length > 1)
     throw new Error("Multiple active sync candidates; resolve before continuing");
   const active = open[0];
   if (active) {
     const request = parseRequest(active.body);
-    if (request.personalSha !== personalSha || request.policyHash !== policyHash) {
+    if (
+      request.repositoryId !== policy.repositoryId ||
+      request.personalSha !== personalSha ||
+      request.policyHash !== policyHash
+    ) {
       await api(`${repo}/issues/${active.number}/comments`, "POST", {
         body: "个人基线或保护策略已变化，旧验证失效。关闭旧候选；下一次检查从实际基线重新准备。",
       });
@@ -188,6 +208,7 @@ async function main() {
     );
     if (ancestor(upstreamSha, personalSha) && !rolledBack && mode !== "canary") continue;
     const request = {
+      repositoryId: policy.repositoryId,
       key,
       upstreamSha,
       personalSha,

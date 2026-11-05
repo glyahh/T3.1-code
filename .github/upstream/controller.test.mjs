@@ -4,9 +4,32 @@ import {
   evidenceComplete,
   parseRequest,
   requestKey,
+  resolveRepository,
   stableReleases,
   task,
 } from "../../scripts/upstream-sync.mjs";
+
+NodeTest.test("repository identity survives a rename and rejects another fork", () => {
+  const policy = { repositoryId: 1441172085, repository: "glyahh/t3code" };
+  const environment = {
+    GITHUB_REPOSITORY_ID: "1441172085",
+    GITHUB_REPOSITORY: "glyahh/T3.1-code",
+  };
+  NodeAssert.equal(resolveRepository(policy, environment), "glyahh/T3.1-code");
+  NodeAssert.equal(
+    resolveRepository(policy, { ...environment, GITHUB_REPOSITORY: "glyahh/another-name" }),
+    "glyahh/another-name",
+  );
+  NodeAssert.throws(
+    () => resolveRepository(policy, { ...environment, GITHUB_REPOSITORY_ID: "123" }),
+    /trusted repository/,
+  );
+  NodeAssert.throws(() => resolveRepository(policy, {}), /trusted repository/);
+  NodeAssert.throws(
+    () => resolveRepository(policy, { ...environment, GITHUB_REPOSITORY: "../another/repo" }),
+    /repository name/,
+  );
+});
 
 NodeTest.test("cloud dispatch never invokes the legacy bot for Work Cloud", () => {
   const request = {

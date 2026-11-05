@@ -1,7 +1,8 @@
 {
   "version": 1,
   "upstream": "pingdotgg/t3code",
-  "repository": "glyahh/t3code",
+  "repository": "glyahh/T3.1-code",
+  "repositoryId": 1441172085,
   "personalBranch": "codex/personal-main",
   "candidatePrefix": "codex/upstream/",
   "maxRounds": 2,

@@ -14,7 +14,7 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
         run: |
           git init .
-          git remote add origin https://github.com/glyahh/t3code.git
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
           git sparse-checkout set --no-cone '/*' '!/.repos/'
           git fetch --depth=1 origin "$SOURCE_SHA"
           git checkout --detach FETCH_HEAD
@@ -34,7 +34,7 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
         run: |
           git init .
-          git remote add origin https://github.com/glyahh/t3code.git
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
           git sparse-checkout set --no-cone '/*' '!/.repos/'
           git fetch origin "$SOURCE_SHA"
           git checkout --detach FETCH_HEAD
