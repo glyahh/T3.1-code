@@ -158,7 +158,17 @@ async function main() {
       return;
     }
     const comments = await list(`${repo}/issues/${active.number}/comments`);
-    const blocked = executor === "codex-cloud" && cloudDispatchError(comments);
+    const rounds = comments.filter(
+      (comment) =>
+        comment.body.startsWith("@codex ") &&
+        !/^@codex (?:security )?review\b/.test(comment.body) &&
+        comment.user.login === process.env.SYNC_OWNER,
+    );
+    const last = rounds.at(-1);
+    const blocked =
+      executor === "codex-cloud" &&
+      active.head.sha === request.seedSha &&
+      cloudDispatchError(last ? comments.slice(comments.indexOf(last) + 1) : comments);
     if (blocked) throw new Error(blocked);
     if (executor === "work-cloud") {
       if (
@@ -175,11 +185,6 @@ async function main() {
       summary(`候选 #${active.number} 等待独立云端执行器；尚未确认实际执行与回写。`);
       return;
     }
-    const rounds = comments.filter(
-      (comment) =>
-        comment.body.startsWith("@codex ") && comment.user.login === process.env.SYNC_OWNER,
-    );
-    const last = rounds.at(-1);
     const timedOut =
       last && Date.now() - Date.parse(last.created_at) > policy.taskTimeoutMinutes * 60_000;
     // Public check results do not need additional permissions on the task token.
