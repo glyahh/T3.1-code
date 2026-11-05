@@ -1,0 +1,11 @@
+{
+  "repositoryId": 1441172085,
+  "key": "863b4fe53917c130de6d344ceeed32a3a3040fb8772d56947711605b7bab3e2a",
+  "upstreamSha": "322f6544dfad0a3c8a0c8cbecf2c7f7874b14268",
+  "personalSha": "dbcd1b9c980f0e2920e393f702d9169bfe8cc9fe",
+  "policyHash": "9df93a0b0168160b6ab8609f91b0bfa22114dcf60b81494fb5ea2f78bf0a9af4",
+  "tag": "v0.1.7",
+  "releaseUrl": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.7",
+  "canary": true,
+  "rolledBack": false
+}
