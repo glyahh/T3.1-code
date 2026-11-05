@@ -7,5 +7,10 @@
   "tag": "v0.1.7",
   "releaseUrl": "https://github.com/pingdotgg/t3code/releases/tag/v0.1.7",
   "canary": true,
-  "rolledBack": false
+  "rolledBack": false,
+  "cloudExecution": {
+    "executor": "codex-cloud-native",
+    "controllerTests": "passed",
+    "sourceSha": "1bdac9524b6f6021d3c441a4993974510fae504b"
+  }
 }
