@@ -41,11 +41,17 @@ export const evidenceComplete = (report, required, base, head) =>
       report.evidence[name].urls.every((url) => /^https:\/\//.test(url)),
   );
 
-const git = (...args) =>
-  NodeChildProcess.execFileSync("git", args, {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  }).trim();
+const git = (...args) => {
+  try {
+    return NodeChildProcess.execFileSync("git", args, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", args[0] === "fetch" ? "inherit" : "pipe"],
+    }).trim();
+  } catch (error) {
+    if (error.status === 1 && args[0] === "merge-base") throw error;
+    throw new Error(`git ${args.join(" ")}: ${error.message}`, { cause: error });
+  }
+};
 const ancestor = (a, b) => {
   try {
     git("merge-base", "--is-ancestor", a, b);
@@ -109,7 +115,7 @@ async function main() {
   );
   const personal = await api(`${repo}/git/ref/heads/${policy.personalBranch}`);
   const personalSha = personal.object.sha;
-  git("fetch", "--no-tags", "origin", personalSha);
+  git("fetch", "--no-tags", "--no-recurse-submodules", "origin", personalSha);
   const personalPolicy = NodeChildProcess.execFileSync(
     "git",
     ["show", `${personalSha}:.github/upstream/policy.json`],
@@ -193,6 +199,7 @@ async function main() {
     git(
       "fetch",
       "--no-tags",
+      "--no-recurse-submodules",
       `https://github.com/${policy.upstream}.git`,
       `refs/tags/${release.tag_name}`,
     );
