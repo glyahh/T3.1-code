@@ -2788,6 +2788,7 @@ function isClaudeWebSearchOutput(output: unknown): output is WebSearchOutput {
 }
 
 const ClaudeNativeToolInputRecord = Schema.Record(Schema.String, Schema.Unknown);
+const decodeClaudeToolInputJson = Schema.decodeOption(Schema.fromJsonString(Schema.Unknown));
 type ClaudeNativeToolInputRecord = typeof ClaudeNativeToolInputRecord.Type;
 const isClaudeNativeToolInputRecord = Schema.is(ClaudeNativeToolInputRecord);
 
@@ -4103,6 +4104,7 @@ interface ClaudeLiveQueryContext {
 }
 
 interface ActiveClaudeToolCall {
+  readonly preparing?: boolean | undefined;
   readonly nativeItemId: string;
   readonly toolName: string;
   readonly classification: ClaudeToolClassification;
@@ -4113,7 +4115,7 @@ interface ActiveClaudeToolCall {
   readonly parentNodeId: OrchestrationV2ExecutionNode["id"];
   readonly ordinal: number;
   readonly startedAt: DateTime.Utc;
-  readonly presentation?: ClaudeToolPresentation;
+  readonly presentation?: ClaudeToolPresentation | undefined;
 }
 
 interface ClaudeSubagentProjectionTarget {
@@ -5575,14 +5577,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly output: ClaudeNativeToolOutput;
           readonly status: Extract<
             OrchestrationV2TurnItem["status"],
-            "running" | "completed" | "failed" | "interrupted" | "cancelled"
+            "pending" | "running" | "completed" | "failed" | "interrupted" | "cancelled"
           >;
           readonly startedAt: DateTime.Utc;
           readonly updatedAt: DateTime.Utc;
           readonly presentation: ClaudeToolPresentation | undefined;
           readonly toolNonExecutionKind?: string;
         }) => {
-          const completedAt = input.status === "running" ? null : input.updatedAt;
+          const completedAt =
+            input.status === "running" || input.status === "pending" ? null : input.updatedAt;
           const nodeId = idAllocator.derive.nodeFromProviderItem({
             driver: CLAUDE_PROVIDER,
             nativeItemId: input.nativeItemId,
@@ -5677,7 +5680,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             isWorkspaceImagePreviewPath(readPath)
               ? readPath
               : undefined;
-          const itemType = input.classification.itemType;
+          const itemType =
+            input.status === "pending" ? "dynamic_tool" : input.classification.itemType;
           const webSearchPatterns = webSearchPatternsFromClaudeTool({
             toolInput: input.toolInput,
             output: input.output,
@@ -5741,7 +5745,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                       input: claudeNativeToolInputValue(input.toolInput),
                       ...(outputValue === undefined ? {} : { output: outputValue }),
                     };
-          return { node, turnItem };
+          return {
+            node,
+            turnItem:
+              input.status === "pending"
+                ? { ...turnItem, title: `Preparing ${input.toolName}` }
+                : turnItem,
+          };
         };
 
         const emitToolCallArtifacts = Effect.fnUntraced(function* (artifacts: {
@@ -6846,8 +6856,18 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           return registered ?? context.subagentsByToolUseId.get(toolUseId);
         });
 
+        const settledToolCalls = new WeakMap<
+          ActiveClaudeTurnContext,
+          Map<string, ActiveClaudeToolCall>
+        >();
+        const streamedToolInputs = new WeakMap<
+          ActiveClaudeTurnContext,
+          Map<string, { id: string; name: string; json: string }>
+        >();
         const findToolCall = (context: ActiveClaudeTurnContext, nativeItemId: string) =>
-          context.toolCalls.get(nativeItemId) ?? subagentToolCalls.get(nativeItemId);
+          context.toolCalls.get(nativeItemId) ??
+          subagentToolCalls.get(nativeItemId) ??
+          settledToolCalls.get(context)?.get(nativeItemId);
         const toolCallsFor = (context: ActiveClaudeTurnContext, toolCall: ActiveClaudeToolCall) =>
           toolCall.runId === null ? subagentToolCalls : context.toolCalls;
 
@@ -6858,14 +6878,30 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly toolInput: ClaudeNativeToolInput;
           readonly parentToolUseId: string | null;
           readonly presentation?: ClaudeToolPresentation | undefined;
+          readonly preparing?: boolean | undefined;
         }) {
           const existing = findToolCall(input.context, input.nativeItemId);
           if (existing !== undefined) {
+            if (
+              settledToolCalls.get(input.context)?.has(input.nativeItemId) ||
+              input.preparing === true
+            )
+              return existing;
             // Permission callbacks can start calls before assistant frames provide their display name and icon.
-            if (input.presentation === undefined || existing.presentation !== undefined) {
+            if (
+              !existing.preparing &&
+              jsonStringifyForTool(existing.input.value) ===
+                jsonStringifyForTool(input.toolInput.value) &&
+              (input.presentation === undefined || existing.presentation !== undefined)
+            ) {
               return existing;
             }
-            const presented = { ...existing, presentation: input.presentation };
+            const presented = {
+              ...existing,
+              preparing: false,
+              input: input.toolInput,
+              presentation: input.presentation ?? existing.presentation,
+            };
             toolCallsFor(input.context, presented).set(input.nativeItemId, presented);
             const updatedAt = yield* DateTime.now;
             yield* emitToolCallArtifacts(
@@ -6884,7 +6920,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 status: "running",
                 startedAt: presented.startedAt,
                 updatedAt,
-                presentation: input.presentation,
+                presentation: presented.presentation,
               }),
             );
             return presented;
@@ -6899,6 +6935,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             toolInput: input.toolInput,
             presentation: input.presentation,
             startedAt: yield* DateTime.now,
+            preparing: input.preparing,
           };
           if (subagent !== undefined) {
             return yield* startSubagentToolCall(subagentProjectionTarget(subagent), call);
@@ -6926,8 +6963,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly ordinal: number;
           readonly startedAt: DateTime.Utc;
           readonly registry: Map<string, ActiveClaudeToolCall>;
+          readonly preparing?: boolean | undefined;
         }) {
           const toolCall: ActiveClaudeToolCall = {
+            preparing: input.preparing,
             nativeItemId: input.nativeItemId,
             toolName: input.toolName,
             classification: classifyClaudeNativeTool(input.toolName),
@@ -6954,7 +6993,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               parentNodeId: toolCall.parentNodeId,
               ordinal: toolCall.ordinal,
               output: NO_CLAUDE_NATIVE_TOOL_OUTPUT,
-              status: "running",
+              status: input.preparing ? "pending" : "running",
               startedAt: toolCall.startedAt,
               updatedAt: toolCall.startedAt,
               presentation: input.presentation,
@@ -7002,6 +7041,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly completedAt: DateTime.Utc;
         }) {
           const { toolCall } = input;
+          if (input.context !== null) {
+            const settled =
+              settledToolCalls.get(input.context) ?? new Map<string, ActiveClaudeToolCall>();
+            if (settled.has(toolCall.nativeItemId)) return;
+            settled.set(toolCall.nativeItemId, toolCall);
+            settledToolCalls.set(input.context, settled);
+          }
           const toolNonExecutionKind = claudeToolNonExecutionKind(
             input.message,
             input.toolResult.tool_use_id,
@@ -7316,13 +7362,21 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly completedAt: DateTime.Utc;
         }) {
           for (const toolCall of input.toolCalls) {
+            if (input.context !== null) {
+              const settled =
+                settledToolCalls.get(input.context) ?? new Map<string, ActiveClaudeToolCall>();
+              settled.set(toolCall.nativeItemId, toolCall);
+              settledToolCalls.set(input.context, settled);
+            }
             yield* stopTaskOutputTail(toolCall.nativeItemId);
             yield* emitToolCallArtifacts(
               buildToolCallArtifacts({
                 context: input.context,
                 nativeItemId: toolCall.nativeItemId,
                 toolName: toolCall.toolName,
-                classification: toolCall.classification,
+                classification: toolCall.preparing
+                  ? { ...toolCall.classification, itemType: "dynamic_tool" }
+                  : toolCall.classification,
                 toolInput: toolCall.input,
                 threadId: toolCall.threadId,
                 runId: toolCall.runId,
@@ -7434,6 +7488,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             completedAt: input.completedAt,
           });
           input.context.toolCalls.clear();
+          streamedToolInputs.delete(input.context);
           for (const toolCall of endingSubagentCalls) {
             subagentToolCalls.delete(toolCall.nativeItemId);
           }
@@ -8406,6 +8461,58 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }
           yield* trackClaudeGoal({ nativeThreadId: liveQuery.nativeThreadId, context, message });
 
+          if (
+            message.type === "stream_event" &&
+            (message.parent_tool_use_id === null ||
+              (yield* resolveSubagentByToolUseId(context, message.parent_tool_use_id)) !==
+                undefined)
+          ) {
+            const event = message.event;
+            const key = `${message.parent_tool_use_id ?? "root"}:${"index" in event ? event.index : ""}`;
+            const inputs =
+              streamedToolInputs.get(context) ??
+              new Map<string, { id: string; name: string; json: string }>();
+            streamedToolInputs.set(context, inputs);
+            if (
+              event.type === "content_block_start" &&
+              event.content_block.type === "tool_use" &&
+              !["Agent", "AskUserQuestion", "ExitPlanMode"].includes(event.content_block.name)
+            ) {
+              const block = event.content_block;
+              if (inputs.get(key)?.id !== block.id) {
+                inputs.set(key, { id: block.id, name: block.name, json: "" });
+              }
+              yield* ensureToolCallStarted({
+                context,
+                nativeItemId: block.id,
+                toolName: block.name,
+                toolInput: EMPTY_CLAUDE_NATIVE_TOOL_INPUT,
+                parentToolUseId: message.parent_tool_use_id,
+                preparing: true,
+              });
+            } else if (
+              event.type === "content_block_delta" &&
+              event.delta.type === "input_json_delta"
+            ) {
+              const pending = inputs.get(key);
+              if (pending !== undefined) pending.json += event.delta.partial_json;
+            } else if (event.type === "content_block_stop") {
+              const pending = inputs.get(key);
+              inputs.delete(key);
+              if (pending !== undefined && findToolCall(context, pending.id)?.preparing) {
+                const decoded = decodeClaudeToolInputJson(pending.json);
+                if (Option.isSome(decoded)) {
+                  yield* ensureToolCallStarted({
+                    context,
+                    nativeItemId: pending.id,
+                    toolName: pending.name,
+                    toolInput: claudeNativeToolInputFromUnknown(decoded.value),
+                    parentToolUseId: message.parent_tool_use_id,
+                  });
+                }
+              }
+            }
+          }
           if (message.type === "stream_event" && !message.parent_tool_use_id) {
             const event = message.event;
             const reasoning = context.reasoning;

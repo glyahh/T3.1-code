@@ -22,6 +22,7 @@ import {
 } from "@t3tools/client-runtime/work-log/command-label";
 import {
   liveActivityToolStatus,
+  preparingToolLabel,
   normalizeCompactToolLabel,
   resolveWorkEntryToolPresentation,
   summarizeToolGroup,
@@ -133,6 +134,8 @@ function workEntryReadPaths(entry: WorkLogEntry, workspaceRoot: string | undefin
 }
 
 export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string | undefined) {
+  const preparing = preparingToolLabel(entry);
+  if (preparing) return preparing;
   if (entry.itemType === "system_notice") return entry.label;
   if (entry.itemType === "reasoning" || entry.tone === "thinking") {
     const thought = entry.detail?.trim().replace(/\s+/g, " ");
@@ -237,6 +240,8 @@ export function liveWorkEntryLabel(
   workspaceRoot: string | undefined,
   active: boolean,
 ) {
+  const preparing = preparingToolLabel(entry);
+  if (preparing) return preparing;
   const status = liveActivityToolStatus(entry.toolLifecycleStatus, active);
   if (entry.itemType === "reasoning") {
     return status === "inProgress" ? "Thinking" : thoughtLabel([entry]);

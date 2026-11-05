@@ -1,7 +1,7 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
-import { digest, evidenceComplete, parseRequest } from "./upstream-sync.mjs";
+import { digest, evidenceComplete, parseRequest, resolveRepository } from "./upstream-sync.mjs";
 
 const trusted = process.env.TRUSTED_DIRECTORY;
 const output = process.env.EVIDENCE_DIRECTORY;
@@ -13,6 +13,7 @@ const policyText = NodeFS.readFileSync(
   "utf8",
 );
 const policy = JSON.parse(policyText);
+resolveRepository(policy);
 const event = JSON.parse(NodeFS.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
 const pr = event.pull_request;
 const request = parseRequest(pr?.body);
@@ -54,10 +55,11 @@ const check = (name, command, args) => {
 try {
   if (
     !request ||
+    request.repositoryId !== policy.repositoryId ||
     request.personalSha !== baseSha ||
     request.policyHash !== report.policyHash ||
     headSha !== pr.head.sha ||
-    pr.head.repo.full_name !== policy.repository
+    pr.head.repo.id !== policy.repositoryId
   )
     throw new Error("请求、个人基线、策略或候选 SHA 不匹配，旧验证无效");
   if (!/^v\d+\.\d+\.\d+$/.test(request.tag) || !/^[a-f0-9]{40}$/.test(request.upstreamSha))

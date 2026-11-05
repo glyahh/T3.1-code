@@ -1,18 +1,20 @@
 # 个人版本的上游同步
 
-此工作流由 GitHub 管理候选，Codex Cloud 通过订阅执行修改，GitHub 执行独立验证。本机无需构建。正式合并、安装和发布均由维护者决定。
+此工作流由 GitHub 管理候选，Codex Cloud 通过订阅执行修改，GitHub 执行独立验证。本机无需构建。保留 Fork 关系，正式合并、安装和发布均由维护者决定。控制代码的部署也须先经维护者审阅。
 
-新版执行路径使用官方 Work Cloud 定时任务直接执行代码，通过 GitHub 连接器回写候选，共享 ChatGPT/Codex 订阅额度。仓库变量 `UPSTREAM_SYNC_EXECUTOR=work-cloud` 让控制器只发布交接标记，不调用旧修改入口；独立云端定时任务遵循默认分支固定版本的 `.github/upstream/worker.md`，定期消费候选。先完成云端执行、回写及独立验证金丝雀，再开启正式调度。
+默认执行路径为 `UPSTREAM_SYNC_EXECUTOR=codex-cloud`，由候选 PR 中的任务评论启动 GitHub 集成支持的 Codex 云端环境。原生云端环境显示可用，不代表旧评论入口已接通。环境存在、任务评论已发送和云端实际执行是不同状态，必须通过本仓库的接入试跑核实。机器人回复要求创建环境时，后续检查明确报告受阻，不继续投递相同任务。
 
-`codex-cloud` 保留旧评论兼容路径。接入实测发现已发布的新版环境仍可能被旧入口报为缺少环境；参见 [OpenAI 问题 #20093](https://github.com/openai/codex/issues/20093)。不能把自动审查成功当成修改任务启动成功，也不能导出订阅登录缓存绕过此问题。
+`work-cloud` 是可选的独立执行路径：控制器只发布交接标记，需要另外配置遵循 `.github/upstream/worker.md` 的云端定时任务。不能把它与 Codex 云端环境混用，也不能把自动审查成功当成修改任务启动成功。评论入口曾报缺少环境，参见 [OpenAI 问题 #20093](https://github.com/openai/codex/issues/20093)；不得导出订阅登录缓存绕过此问题。
+
+仓库身份固定为 GitHub ID `1441172085`。控制器与验证器按 ID 拒绝其他仓库，从 Actions 提供的当前仓库名称获取代码；改名不改变身份，也不要求解除 Fork。`policy.repository` 仅记录可读名称，官方上游仍为 `pingdotgg/t3code`。
 
 ## 首次接入
 
 1. 将个人功能及同步代码放入 `codex/personal-main`。将控制工作流、脚本和 `.github/upstream/` 同步到默认分支；无需改变默认分支的产品代码。定时任务只从默认分支运行。
-2. 在 Codex 的 GitHub 集成设置连接 `glyahh/t3code`，配置供 GitHub 任务使用的云端环境，安装仓库规定的 Node、pnpm、Vite+。允许获取 GitHub 官方代码及安装依赖，测试状态使用独立 `.t3`，不提供正式数据库或真实安装目录。
+2. 在 Codex 的 GitHub 集成设置连接 `glyahh/T3.1-code`，配置供 GitHub 任务使用的云端环境，安装仓库规定的 Node、pnpm、Vite+。允许获取 GitHub 官方代码及安装依赖，测试状态使用独立 `.t3`，不提供正式数据库或真实安装目录。使用 `codex-cloud` 时不需要另建 Work Cloud 定时任务。
 3. 创建归属已绑定 Codex 的 `glyahh` 账号的细粒度 GitHub 令牌，仅授权本仓库 Contents 和 Pull requests 读写，保存为 Actions secret `UPSTREAM_SYNC_TOKEN`。令牌只供默认分支控制器使用。不要上传 Codex `auth.json`。令牌过期需替换；不要在聊天或日志中粘贴令牌。
-4. 保持仓库变量 `UPSTREAM_SYNC_ENABLED` 缺失或为 `false`。手动运行 **Upstream Sync**，选择 `canary`。控制器使用当前最新正式版本创建接入草稿，发送任务评论；确认 Codex 有响应、实际启动云端任务、修改推回分支，并出现独立验证报告。接入候选故意不能通过正式合并门禁。
-5. 关闭接入草稿。接入测试未完整通过前，不启用定时。成功后设置变量 `UPSTREAM_SYNC_ENABLED=true`，每小时第 17 分钟补查版本。GitHub 可能延迟定时任务，公开仓库长期不活动也可能停用计划；可用手动 `scan` 补查。
+4. 保持仓库变量 `UPSTREAM_SYNC_ENABLED` 缺失或为 `false`，设置 `UPSTREAM_SYNC_EXECUTOR=codex-cloud`。手动运行 **Upstream Sync**，选择 `canary`。控制器固定本次工作流提交；手动选择测试分支时运行该分支控制器，定时运行默认分支控制器。确认 Codex 实际启动云端任务、修改推回接入草稿，并出现独立验证报告。接入候选故意不能通过正式合并门禁，不以绿色代码审查或任务评论代替回写证据。
+5. 维护者审阅控制代码并部署到默认分支，确认 `codex/personal-main` 是待维护的个人基线；未提交及其他分支中的改动不会自动进入该基线。关闭接入草稿。接入测试未完整通过前，不启用定时。成功后设置变量 `UPSTREAM_SYNC_ENABLED=true`，每小时第 17 分钟补查版本。GitHub 可能延迟定时任务，公开仓库长期不活动也可能停用计划；可用手动 `scan` 补查。默认分支尚未部署、云端无法执行或回写失败时保持关闭。
 
 ## 验证与证据
 

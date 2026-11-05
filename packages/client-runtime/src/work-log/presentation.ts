@@ -227,6 +227,15 @@ export function liveActivityToolStatus(status: string | undefined, presentTense:
   return "completed";
 }
 
+export function preparingToolLabel(
+  entry: Pick<WorkLogPresentationEntry, "structuredPayload">,
+): string | null {
+  const item = entry.structuredPayload;
+  return item?.type === "dynamic_tool" && item.status === "pending"
+    ? `Preparing ${item.toolName ?? "tool"}`
+    : null;
+}
+
 export function resolveWorkEntryToolPresentation(
   entry: Pick<
     WorkLogPresentationEntry,
