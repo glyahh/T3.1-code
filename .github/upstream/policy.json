@@ -3,19 +3,24 @@
   "upstream": "pingdotgg/t3code",
   "repository": "glyahh/T3.1-code",
   "repositoryId": 1441172085,
-  "personalBranch": "codex/personal-main",
+  "personalBranch": "codex/upstream-integration-base",
   "candidatePrefix": "codex/upstream/",
   "maxRounds": 2,
   "taskTimeoutMinutes": 120,
   "features": [
     {
       "id": "chinese-settings",
-      "paths": ["apps/web/src/components/settings/"],
+      "paths": [
+        "apps/web/src/components/settings/"
+      ],
       "preserve": "中文设置、搜索及设置入口可用"
     },
     {
       "id": "timeline",
-      "paths": ["apps/web/src/components/chat/", "packages/client-runtime/src/work-log/"],
+      "paths": [
+        "apps/web/src/components/chat/",
+        "packages/client-runtime/src/work-log/"
+      ],
       "preserve": "消息、思考和工具活动不丢失、不重复，滚动锚点与跟随符合当前行为"
     },
     {
@@ -38,7 +43,9 @@
     },
     {
       "id": "custom-update",
-      "paths": ["apps/desktop/src/updates/"],
+      "paths": [
+        "apps/desktop/src/updates/"
+      ],
       "preserve": "定制安装不被官方自动更新覆盖"
     },
     {
@@ -76,7 +83,11 @@
   ],
   "streamingAcceptance": {
     "localEventToDisplayP95Ms": 200,
-    "sessions": [1, 4, 8],
+    "sessions": [
+      1,
+      4,
+      8
+    ],
     "updatesPerSessionPerSecond": 50,
     "loadMinutesPerCase": 15,
     "combinedFaultMinutes": 30,
