@@ -82,7 +82,7 @@ export function threadReadLabel(label: string, target: ReturnType<typeof useThre
   return prefix ? { ...target, prefix, text: `${prefix} “${target.title}”` } : null;
 }
 
-export function ThreadReadLabel({
+function ThreadReadLabel({
   label,
   environmentId,
   linked,

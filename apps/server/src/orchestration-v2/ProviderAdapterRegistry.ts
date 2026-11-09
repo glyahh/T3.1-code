@@ -49,6 +49,7 @@ export interface ProviderAdapterRegistryV2Shape {
       readonly continuationKey: string;
       readonly enabled: boolean;
       readonly capabilities: OrchestrationV2ProviderCapabilities;
+      readonly configurationRevision?: string;
     },
     ProviderAdapterRegistryV2Error
   >;
@@ -67,6 +68,8 @@ export const layerFromProviderInstanceRegistry: Layer.Layer<
   ProviderAdapterRegistryV2,
   Effect.gen(function* () {
     const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+    const configurationRevisions = new WeakMap<object, string>();
+    let nextConfigurationRevision = 0;
     return ProviderAdapterRegistryV2.of({
       get: Effect.fn("ProviderAdapterRegistryV2.get")(function (instanceId) {
         return instances.getInstance(instanceId).pipe(
@@ -136,6 +139,11 @@ export const layerFromProviderInstanceRegistry: Layer.Layer<
         if (instance === undefined) {
           return yield* new ProviderAdapterRegistryLookupError({ instanceId });
         }
+        let configurationRevision = configurationRevisions.get(instance);
+        if (configurationRevision === undefined) {
+          configurationRevision = String(++nextConfigurationRevision);
+          configurationRevisions.set(instance, configurationRevision);
+        }
         const capabilities = yield* instance.orchestrationAdapter
           .getCapabilities()
           .pipe(
@@ -148,6 +156,7 @@ export const layerFromProviderInstanceRegistry: Layer.Layer<
           continuationKey: instance.continuationIdentity.continuationKey,
           enabled: instance.enabled,
           capabilities,
+          configurationRevision,
         };
       }),
     });

@@ -73,7 +73,7 @@ function Card({
           contentKey={String(rows)}
         >
           {(density) => (
-            <p style={{ height: density === "full" ? rows * 100 : 50 }}>
+            <p data-density={density} style={{ height: density === "full" ? rows * 100 : 50 }}>
               Details for {threadRef.threadId}
             </p>
           )}
@@ -91,7 +91,7 @@ it("stays open once opened", async () => {
   expect(popoverOpen(threadB)).toBe(true);
 });
 
-it("closes a popup left open when the card switches inline, and reopens from the flag", async () => {
+it("keeps the popup open across canvas placement changes and reopens after closing", async () => {
   using fixture = setup();
   await using screen = await render(<Card threadRef={threadB} inline={false} fixture={fixture} />);
   const setOpen = (open: boolean) =>
@@ -101,7 +101,7 @@ it("closes a popup left open when the card switches inline, and reopens from the
 
   useRightPanelStore.getState().setThreadPanelOpen(threadB, "inline", false);
   await screen.rerender(<Card threadRef={threadB} inline fixture={fixture} />);
-  await expect.element(page.getByText("Details for thread-b")).not.toBeInTheDocument();
+  await expect.element(page.getByText("Details for thread-b")).toBeVisible();
   await setOpen(false);
 
   await screen.rerender(<Card threadRef={threadB} inline={false} fixture={fixture} />);
@@ -110,12 +110,13 @@ it("closes a popup left open when the card switches inline, and reopens from the
   await expect.element(page.getByText("Details for thread-b")).toBeVisible();
 });
 
-it("does not reopen the popover when the card returns from inline mode", async () => {
+it("does not reopen a closed popover when the canvas placement changes", async () => {
   using fixture = setup();
   await using screen = await render(<Card threadRef={threadB} inline={false} fixture={fixture} />);
   await act(() => useRightPanelStore.getState().setThreadPanelOpen(threadB, "popover", true));
   await expect.element(page.getByText("Details for thread-b")).toBeVisible();
 
+  await act(() => useRightPanelStore.getState().setThreadPanelOpen(threadB, "popover", false));
   useRightPanelStore.getState().setThreadPanelOpen(threadB, "inline", false);
   await screen.rerender(<Card threadRef={threadB} inline fixture={fixture} />);
   await expect.element(page.getByText("Details for thread-b")).not.toBeInTheDocument();
@@ -151,10 +152,13 @@ it("reopens after a normal close", async () => {
 
 it("returns to full density when hidden items make the content fit", async () => {
   using fixture = setup();
-  await using screen = await render(<Card threadRef={threadB} inline fixture={fixture} rows={6} />);
-  const card = page.getByRole("region", { name: "Thread details" });
+  await using screen = await render(
+    <Card threadRef={threadB} inline={false} fixture={fixture} rows={10} />,
+  );
+  await act(() => useRightPanelStore.getState().setThreadPanelOpen(threadB, "popover", true));
+  const card = page.getByText("Details for thread-b");
   await expect.element(card).toHaveAttribute("data-density", "compact");
 
-  await screen.rerender(<Card threadRef={threadB} inline fixture={fixture} rows={2} />);
+  await screen.rerender(<Card threadRef={threadB} inline={false} fixture={fixture} rows={2} />);
   await expect.element(card).toHaveAttribute("data-density", "full");
 });

@@ -592,6 +592,7 @@ export function EnvironmentProviderSettings({
     reportFailure: false,
   });
   const [isRefreshingProviders, setIsRefreshingProviders] = useState(false);
+  const [refreshingInstanceId, setRefreshingInstanceId] = useState<ProviderInstanceId | null>(null);
   const [isAddInstanceDialogOpen, setIsAddInstanceDialogOpen] = useState(false);
   const [selectedInstanceId, setSelectedInstanceId] = useState<ProviderInstanceId | null>(
     targetInstanceId ?? null,
@@ -648,19 +649,31 @@ export function EnvironmentProviderSettings({
   );
   const defaultProviderHealthRefreshIntervalSeconds = durationToSeconds(providerHealthPreset);
 
-  const refreshProviders = () => {
+  const refreshProviders = (instanceId?: ProviderInstanceId) => {
     if (refreshingRef.current || !readEnvironmentScope(environmentId, AuthOrchestrationReadScope))
       return;
     refreshingRef.current = true;
+    setRefreshingInstanceId(instanceId ?? null);
     setIsRefreshingProviders(true);
     void (async () => {
       const result = await refreshServerProviders({
         environmentId,
-        input: { refreshModels: true, reloadSecrets: true },
+        input: {
+          ...(instanceId === undefined ? {} : { instanceId }),
+          refreshModels: true,
+          reloadSecrets: true,
+        },
       });
       refreshingRef.current = false;
       setIsRefreshingProviders(false);
+      setRefreshingInstanceId(null);
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add({
+          type: "error",
+          title: settingsText("Could not refresh provider configuration"),
+          description: error instanceof Error ? error.message : String(error),
+        });
         console.warn("Failed to refresh providers", {
           operation: "refresh-providers",
           environmentId,
@@ -1082,6 +1095,37 @@ export function EnvironmentProviderSettings({
               <ScrollArea scrollFade chainVerticalScroll className="@min-[48rem]/providers:h-full">
                 {/* Flat sections run dividers edge to edge and inset text like the list beside them. */}
                 <div className="space-y-6 py-4">
+                  <div className="flex justify-end px-3 sm:px-4">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={
+                        isRefreshingProviders ||
+                        !canRefreshProviders ||
+                        updatingProviderInstanceIds.has(selectedRow.instanceId) ||
+                        serverProviders.some(
+                          (provider) =>
+                            provider.instanceId === selectedRow.instanceId &&
+                            isProviderUpdateActive(provider),
+                        )
+                      }
+                      aria-busy={
+                        isRefreshingProviders &&
+                        (refreshingInstanceId === null ||
+                          refreshingInstanceId === selectedRow.instanceId)
+                      }
+                      onClick={() => refreshProviders(selectedRow.instanceId)}
+                    >
+                      <RefreshIcon
+                        refreshing={
+                          isRefreshingProviders &&
+                          (refreshingInstanceId === null ||
+                            refreshingInstanceId === selectedRow.instanceId)
+                        }
+                      />
+                      {settingsText("Refresh current configuration")}
+                    </Button>
+                  </div>
                   {renderProviderInstance(selectedRow, "editor")}
                 </div>
               </ScrollArea>

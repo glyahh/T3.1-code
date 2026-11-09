@@ -1,8 +1,10 @@
 // Pi frames are LF-delimited with trailing CR stripped; readline also splits U+2028/U+2029 and corrupts them.
 import * as Clock from "effect/Clock";
+import type * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Queue from "effect/Queue";
@@ -83,6 +85,7 @@ export interface PiRpcConnection {
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const STARTUP_REQUEST_TIMEOUT_MS = 60_000;
 const TERMINATION_GRACE = Duration.seconds(1);
 
 interface PendingPiRequest {
@@ -191,6 +194,7 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
 
   let childExited = false;
   let diagnosingStdoutClose = false;
+  let admittedWork = false;
 
   const killProcessGroup = (signal: NodeJS.Signals): boolean => {
     try {
@@ -233,7 +237,7 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
 
   const pendingRequests = new Map<string, PendingPiRequest>();
   const events = yield* Queue.unbounded<PiRpcRecord, PiRpcError>();
-  const outgoing = yield* Queue.unbounded<Uint8Array, PiRpcError>();
+  const outgoing = yield* Queue.unbounded<Uint8Array, PiRpcError | Cause.Done>();
   const transportDown = yield* Deferred.make<never, PiRpcError>();
   const exitDeferred = yield* Deferred.make<number, PiRpcError>();
   let nextRequestId = 0;
@@ -252,6 +256,7 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
   const routeRecord =
     /* Protocol records and writes include streaming deltas; avoid a span per record. */
     Effect.fnUntraced(function* (record: PiRpcRecord) {
+      if (record["type"] === "agent_start") admittedWork = true;
       if (record["type"] === "response" && typeof record["id"] === "string") {
         const pending = pendingRequests.get(record["id"]);
         if (pending !== undefined) {
@@ -357,7 +362,7 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
   );
 
   // Start the reader first so stdout-close diagnosis can win over broken-pipe stdin.
-  yield* Stream.fromQueue(outgoing).pipe(
+  const stdinWriter = yield* Stream.fromQueue(outgoing).pipe(
     Stream.run(child.stdin),
     Effect.catchCause((cause) =>
       diagnosingStdoutClose
@@ -370,6 +375,19 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
   const send =
     /* Protocol records and writes include streaming deltas; avoid a span per record. */
     Effect.fnUntraced(function* (record: PiRpcRecord): Effect.fn.Return<void, PiRpcError> {
+      if (
+        ![
+          "get_state",
+          "get_available_models",
+          "get_entries",
+          "get_messages",
+          "get_session_stats",
+          "get_commands",
+          "get_last_assistant_text",
+          "set_session_name",
+        ].includes(String(record["type"]))
+      )
+        admittedWork = true;
       const accepted = yield* Queue.offer(
         outgoing,
         new TextEncoder().encode(`${encodeJsonLine(record)}\n`),
@@ -383,6 +401,7 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
     record: PiRpcRecord,
     timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
   ): Effect.fn.Return<unknown, PiRpcError | PiRpcTimeoutError> {
+    yield* Effect.annotateCurrentSpan("pi.rpc.operation", String(record["type"] ?? "request"));
     const id = `t3-${nextRequestId++}`;
     const deferred = yield* Deferred.make<unknown, PiRpcError>();
     pendingRequests.set(id, { deferred });
@@ -405,13 +424,62 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
     );
   });
 
+  // Discovery/preparation must let the SDK release credential locks; work keeps its existing tree-stop path.
+  const terminate = yield* Effect.cached(
+    Effect.gen(function* () {
+      if (!admittedWork) {
+        yield* Effect.gen(function* () {
+          yield* Queue.clear(outgoing);
+          yield* Queue.end(outgoing);
+          yield* Fiber.await(stdinWriter);
+          if (!hasExited()) yield* Deferred.await(exitDeferred);
+        }).pipe(
+          Effect.timeoutOption(TERMINATION_GRACE),
+          Effect.provideService(Clock.Clock, Clock.Clock.defaultValue()),
+          Effect.ignore,
+        );
+      }
+      yield* failTransport(
+        new PiRpcError({ operation: "terminate", detail: "pi process was stopped" }),
+      );
+      yield* terminateProcess;
+    }).pipe(Effect.ignore, Effect.uninterruptible),
+  );
+  yield* Scope.addFinalizer(scope, terminate);
+  let protocolReady = false;
+  const initialState = yield* Effect.cached(
+    request({ type: "get_state" }, STARTUP_REQUEST_TIMEOUT_MS).pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          protocolReady = true;
+        }),
+      ),
+      Effect.tapError(() => terminate),
+      Effect.onInterrupt(() => terminate),
+    ),
+  );
   return {
-    send,
-    request,
+    send: (record) =>
+      initialState.pipe(
+        Effect.mapError((cause) =>
+          cause._tag === "PiRpcError"
+            ? cause
+            : new PiRpcError({ operation: "get_state", detail: cause.message, cause }),
+        ),
+        Effect.andThen(send(record)),
+      ),
+    request: (record, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) =>
+      Effect.suspend(() => {
+        const reuseHandshake = !protocolReady && record["type"] === "get_state";
+        return initialState.pipe(
+          Effect.filterOrElse(
+            () => reuseHandshake,
+            () => request(record, timeoutMs),
+          ),
+        );
+      }),
     events,
     exited: Deferred.await(exitDeferred),
-    terminate: failTransport(
-      new PiRpcError({ operation: "terminate", detail: "pi process was stopped" }),
-    ).pipe(Effect.andThen(terminateProcess), Effect.ignore, Effect.uninterruptible),
+    terminate,
   } satisfies PiRpcConnection;
 });

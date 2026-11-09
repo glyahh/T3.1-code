@@ -435,6 +435,48 @@ const SettingsBaseUrl = fromLenientJson(
 );
 const decodeSettingsBaseUrl = Schema.decodeUnknownEffect(SettingsBaseUrl);
 
+const ModelRoutingEnvironment = Schema.Struct({
+  ANTHROPIC_MODEL: Schema.optional(Schema.String),
+  ANTHROPIC_DEFAULT_OPUS_MODEL: Schema.optional(Schema.String),
+  ANTHROPIC_DEFAULT_SONNET_MODEL: Schema.optional(Schema.String),
+  ANTHROPIC_DEFAULT_FABLE_MODEL: Schema.optional(Schema.String),
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: Schema.optional(Schema.String),
+});
+const decodeModelRoutingSettings = Schema.decodeUnknownEffect(
+  fromLenientJson(Schema.Struct({ env: Schema.optional(ModelRoutingEnvironment) })),
+);
+
+export const readClaudeModelRouting = Effect.fn("readClaudeModelRouting")(function* (
+  config: Pick<ClaudeSettings, "homePath">,
+  environment: NodeJS.ProcessEnv,
+) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const platform = yield* HostProcess.Platform;
+  const configDirPath = yield* resolveClaudeConfigDirPath(config, environment);
+  let routing = Object.fromEntries(
+    Object.keys(ModelRoutingEnvironment.fields).map((key) => [key, environment[key]]),
+  );
+  routing.CCSWITCH_CONFIG_REVISION = environment.CCSWITCH_CONFIG_REVISION;
+  for (const settingsPath of claudeSettingsPaths(
+    path,
+    configDirPath,
+    undefined,
+    platform,
+    environment,
+  )) {
+    const contents = yield* fileSystem
+      .readFileString(settingsPath)
+      .pipe(Effect.orElseSucceed(() => undefined));
+    if (contents === undefined) continue;
+    const settings = yield* decodeModelRoutingSettings(contents).pipe(
+      Effect.orElseSucceed(() => undefined),
+    );
+    Object.assign(routing, settings?.env);
+  }
+  return routing;
+});
+
 /** ANTHROPIC_BASE_URL from Claude's settings `env`, which Claude Code applies over the process env. */
 export const readClaudeSettingsBaseUrl = Effect.fn("readClaudeSettingsBaseUrl")(function* (
   config: Pick<ClaudeSettings, "homePath">,

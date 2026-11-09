@@ -7,6 +7,7 @@ import {
   type ServerProviderUpdateRequiredModel,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import {
   getModelSelectionStringOptionValue,
   getProviderOptionCurrentValue,
@@ -31,6 +32,16 @@ export interface ClaudeCatalogModel {
   readonly model: ServerProviderModel;
   readonly runtime: ClaudeCodeProfile;
   readonly compatibility: ClaudeCodeCompatibility;
+  readonly routedModel?: string;
+}
+
+export class ClaudeModelEffortError extends Schema.TaggedError<ClaudeModelEffortError>()(
+  "ClaudeModelEffortError",
+  { model: Schema.String, effort: Schema.String },
+) {
+  override get message(): string {
+    return `Model ${this.model} does not support reasoning effort ${this.effort}.`;
+  }
 }
 
 export interface ClaudeModelCatalog {
@@ -78,9 +89,9 @@ export const BUNDLED_CLAUDE_MODEL_CATALOG = resolveClaudeModelCatalog(undefined)
 export function scopeClaudeModelCatalog(
   catalog: ClaudeModelCatalog,
   customModels: ReadonlyArray<CustomModelSetting>,
+  routing: Readonly<Record<string, string | undefined>> = {},
 ): ClaudeModelCatalog {
   const customEntries = readCustomModelEntries(customModels);
-  if (customEntries.length === 0) return catalog;
   const customAliases = new Set(customEntries.map((entry) => entry.slug.toLowerCase()));
 
   const builtInModels = catalog.models.map((entry) => {
@@ -111,10 +122,80 @@ export function scopeClaudeModelCatalog(
     });
   }
 
-  return { models: [...builtInModels, ...customCatalogModels] };
+  return {
+    models: [...builtInModels, ...customCatalogModels].map((entry) => {
+      const role =
+        /^(?:ccswitch-|(?:claude-)?)(opus|sonnet|fable|haiku)(?:-\d+(?:[-.]\d+)*)?(?:\[1m\])?$/i.exec(
+          entry.model.slug,
+        )?.[1];
+      const explicitTarget = ["OPUS", "SONNET", "FABLE", "HAIKU"].some(
+        (name) =>
+          (routing[`ANTHROPIC_DEFAULT_${name}_MODEL`] ?? routing.ANTHROPIC_MODEL) ===
+          entry.model.slug,
+      );
+      const routedModel = explicitTarget
+        ? entry.model.slug
+        : ((role
+            ? (routing[`ANTHROPIC_DEFAULT_${role.toUpperCase()}_MODEL`] ?? routing.ANTHROPIC_MODEL)
+            : undefined) ?? entry.model.slug);
+      const target = role
+        ? (routing[`ANTHROPIC_DEFAULT_${role.toUpperCase()}_MODEL`] ?? routing.ANTHROPIC_MODEL)
+        : undefined;
+      const routedEntry =
+        target !== undefined ||
+        (routing.CCSWITCH_CONFIG_REVISION?.trim() && role !== undefined) ||
+        /^glm-5\.3-flash(?:\[1m\])?$/i.test(routedModel)
+          ? {
+              ...entry,
+              routedModel,
+              model:
+                target !== undefined && role && !explicitTarget
+                  ? {
+                      ...entry.model,
+                      name: `${routedModel.replace(/\[1m\]$/i, "")} · ${role[0]!.toUpperCase()}${role.slice(1).toLowerCase()}`,
+                      shortName: routedModel.replace(/\[1m\]$/i, ""),
+                    }
+                  : entry.model,
+            }
+          : entry;
+      if (!/^glm-5\.3-flash(?:\[1m\])?$/i.test(routedModel)) return routedEntry;
+      return {
+        ...routedEntry,
+        routedModel,
+        model: {
+          ...routedEntry.model,
+          capabilities: {
+            ...entry.model.capabilities,
+            optionDescriptors: (entry.model.capabilities?.optionDescriptors ?? []).map(
+              (descriptor) =>
+                descriptor.id === "effort" && descriptor.type === "select"
+                  ? {
+                      ...descriptor,
+                      options: descriptor.options
+                        .filter((option) =>
+                          [
+                            "low",
+                            "high",
+                            "max",
+                            ...(descriptor.promptInjectedValues ?? []),
+                          ].includes(option.id),
+                        )
+                        .map((option) => ({ ...option, isDefault: option.id === "high" })),
+                    }
+                  : descriptor,
+            ),
+          },
+        },
+        runtime: {
+          ...entry.runtime,
+          effortMap: { ...entry.runtime.effortMap, medium: "high", max: "max" },
+        },
+      };
+    }),
+  };
 }
 
-function resolveClaudeCatalogModel(
+export function resolveClaudeCatalogModel(
   catalog: ClaudeModelCatalog,
   slugOrAlias: string | null | undefined,
 ): ClaudeCatalogModel | undefined {
@@ -207,6 +288,17 @@ export function resolveClaudeCatalogEffort(
   model: string | null | undefined,
   raw: string | null | undefined,
 ): string | undefined {
+  const entry = resolveClaudeCatalogModel(catalog, model);
+  if (
+    entry?.routedModel !== undefined &&
+    /^glm-5\.3-flash(?:\[1m\])?$/i.test(entry.routedModel) &&
+    raw &&
+    !["low", "medium", "high", "max", "ultrathink"].includes(raw)
+  ) {
+    throw new ClaudeModelEffortError({ model: entry.routedModel, effort: raw });
+  }
+  if (/^glm-5\.3-flash(?:\[1m\])?$/i.test(entry?.routedModel ?? "") && raw === "medium")
+    return "high";
   if (!resolveClaudeCatalogModel(catalog, model)) {
     const effort = raw?.trim();
     return effort && ["low", "medium", "high", "xhigh", "max"].includes(effort)

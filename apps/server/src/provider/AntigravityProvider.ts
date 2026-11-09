@@ -13,6 +13,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
+import * as Queue from "effect/Queue";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -190,6 +191,35 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     draft: initialDraft,
     authRevision: 0,
   });
+  const quotaRefreshes = yield* Queue.sliding<number>(1);
+  if (options.probeUsage !== undefined) {
+    const probeUsage = options.probeUsage;
+    yield* Stream.fromQueue(quotaRefreshes).pipe(
+      Stream.runForEach((revision) =>
+        Effect.gen(function* () {
+          const before = yield* SubscriptionRef.get(metadata);
+          if (before.authRevision !== revision || before.draft.auth.status !== "authenticated")
+            return;
+          const limits = yield* probeUsage;
+          yield* SubscriptionRef.update(metadata, (state) =>
+            state.authRevision !== revision
+              ? state
+              : {
+                  ...state,
+                  draft: {
+                    ...state.draft,
+                    usageLimits: resolveUsageLimitsAfterProbe({
+                      published: state.draft.usageLimits,
+                      probed: limits,
+                    }),
+                  },
+                },
+          );
+        }).pipe(Effect.ignoreCause({ log: true })),
+      ),
+      Effect.forkScoped,
+    );
+  }
   // Preserve disk-discovered skills when callbacks replace workspace commands; the registry will not rescan them.
   const discoveredSkills = new Map<string, ServerProvider["skills"]>();
   const thinkingLevels = new Map<string, ThinkingConfig | null>();
@@ -295,12 +325,6 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     haveSettingsChanged: () => false,
     initialSnapshot: () => getSnapshot,
     checkProvider: checkProvider(),
-    enrichSnapshot: ({ publishSnapshot }) =>
-      SubscriptionRef.changes(metadata).pipe(
-        Stream.runForEach((state) =>
-          options.stampIdentity(state.draft).pipe(Effect.flatMap(publishSnapshot)),
-        ),
-      ),
   });
 
   const onSessionStarted = Effect.fn("AntigravityProvider.onSessionStarted")(function* (
@@ -311,12 +335,8 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     observeThinkingLevels(started.sessionSetupResult.configOptions);
     const before = yield* SubscriptionRef.get(metadata);
     const supportsTextGeneration = yield* options.supportsTextGeneration;
-    const usageLimits =
-      options.probeUsage && (!before.draft.usageLimits || before.draft.usageLimits.unavailable)
-        ? yield* options.probeUsage
-        : before.draft.usageLimits;
     const updatedAt = DateTime.formatIso(yield* DateTime.now);
-    yield* SubscriptionRef.update(metadata, (state) => {
+    const next = yield* SubscriptionRef.updateAndGet(metadata, (state) => {
       if (
         state.authRevision !== before.authRevision &&
         state.draft.auth.status === "unauthenticated"
@@ -339,10 +359,6 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
             label: options.auth?.label ?? "Google account",
           },
           checkedAt: updatedAt,
-          usageLimits: resolveUsageLimitsAfterProbe({
-            published: draft.usageLimits,
-            probed: usageLimits ?? draft.usageLimits,
-          }),
           models: buildAntigravityModelsFromSession(started.sessionSetupResult, thinkingLevels),
           supportsTextGeneration,
           ...(cwd
@@ -361,6 +377,14 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
         },
       } satisfies AntigravityProviderState;
     });
+    // Quota display is not a prerequisite for delivering the first prompt.
+    if (
+      options.probeUsage &&
+      next.draft.auth.status === "authenticated" &&
+      (!next.draft.usageLimits || next.draft.usageLimits.unavailable)
+    ) {
+      yield* Queue.offer(quotaRefreshes, next.authRevision);
+    }
   });
 
   const onConfigOptionsUpdated = Effect.fn("AntigravityProvider.onConfigOptionsUpdated")(function* (
@@ -466,7 +490,16 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
   });
 
   return {
-    snapshot: { ...managed, getSnapshot },
+    snapshot: {
+      ...managed,
+      getSnapshot,
+      // Pulls and pushes use the same authority, including asynchronous quota updates.
+      get streamChanges() {
+        return SubscriptionRef.changes(metadata).pipe(
+          Stream.mapEffect((state) => options.stampIdentity(state.draft)),
+        );
+      },
+    },
     onSessionStarted,
     onConfigOptionsUpdated,
     onAvailableCommands,

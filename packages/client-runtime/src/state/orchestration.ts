@@ -65,6 +65,10 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       }),
     }),
     v2: {
+      prepareProvider: createEnvironmentRpcCommand(runtime, {
+        label: "environment-data:orchestration-v2:prepare-provider",
+        tag: ORCHESTRATION_V2_WS_METHODS.dispatchCommand,
+      }),
       dispatchCommand: createEnvironmentRpcCommand(runtime, {
         label: "environment-data:orchestration-v2:dispatch-command",
         tag: ORCHESTRATION_V2_WS_METHODS.dispatchCommand,

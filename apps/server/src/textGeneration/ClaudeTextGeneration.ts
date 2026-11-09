@@ -33,6 +33,7 @@ import {
   hasClaudeManagedMcpConfig,
   makeClaudeEnvironment,
 } from "../provider/Drivers/ClaudeHome.ts";
+import { readClaudeModelRouting } from "../provider/Drivers/ClaudeSkills.ts";
 
 const CLAUDE_TIMEOUT_MS = 180_000;
 /** `--tools` takes bare names; patterns go in the allow list. */
@@ -86,7 +87,13 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
   const fileSystem = yield* FileSystem.FileSystem;
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
   const scopedModelCatalog = modelCatalog.pipe(
-    Effect.map((catalog) => scopeClaudeModelCatalog(catalog, claudeSettings.customModels)),
+    Effect.flatMap((catalog) =>
+      readClaudeModelRouting(claudeSettings, claudeEnvironment).pipe(
+        Effect.map((routing) =>
+          scopeClaudeModelCatalog(catalog, claudeSettings.customModels, routing),
+        ),
+      ),
+    ),
   );
 
   const readStreamAsString = <E>(
@@ -149,11 +156,16 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     });
     const findDescriptor = (id: string) => descriptors.find((descriptor) => descriptor.id === id);
     const rawEffortSelection = getModelSelectionStringOptionValue(resolvedModelSelection, "effort");
-    const resolvedEffort = resolveClaudeCatalogEffort(
-      catalog,
-      resolvedModelSelection.model,
-      rawEffortSelection,
-    );
+    const resolvedEffort = yield* Effect.try({
+      try: () =>
+        resolveClaudeCatalogEffort(catalog, resolvedModelSelection.model, rawEffortSelection),
+      catch: (cause) =>
+        new TextGenerationError({
+          operation,
+          detail: "Unsupported reasoning effort for the selected model.",
+          cause,
+        }),
+    });
     const cliEffort = normalizeClaudeCatalogEffort(
       catalog,
       resolvedEffort,

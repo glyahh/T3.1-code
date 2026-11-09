@@ -326,6 +326,9 @@ const makeFakePi: Effect.Effect<FakePi> = Effect.gen(function* () {
           args: command.args,
           env: command.options.env ?? {},
         };
+        if (command.args.includes("--fork")) {
+          stateQueue.unshift({ sessionFile: "/fake/cli-fork-startup.jsonl" });
+        }
       }
       return ChildProcessSpawner.makeHandle({
         pid: ChildProcessSpawner.ProcessId(FAKE_PID),

@@ -116,7 +116,7 @@ const piDiscoverySpawner = (
 
 const settings = {
   enabled: true,
-  binaryPath: "pi",
+  binaryPath: "pi-test.exe",
   launchArgs: "",
   customModels: [],
 } as const;

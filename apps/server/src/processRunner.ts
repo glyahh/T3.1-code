@@ -26,6 +26,8 @@ export interface ProcessRunInput {
   readonly stdin?: string | undefined;
   /** Receives every stdout chunk, including bytes beyond the buffered output limit. */
   readonly onStdoutChunk?: ((chunk: Uint8Array) => void) | undefined;
+  /** Child exit can precede output-pipe closure when descendants inherited the pipe. */
+  readonly onProcessExit?: Effect.Effect<void> | undefined;
   readonly maxOutputBytes?: number | undefined;
   readonly outputMode?: "error" | "truncate" | undefined;
   readonly truncatedMarker?: string | undefined;
@@ -311,6 +313,12 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
     );
 
   const stdin = input.stdin;
+  const processExit =
+    input.onProcessExit === undefined
+      ? child.exitCode
+      : yield* Effect.cached(child.exitCode.pipe(Effect.tap(() => input.onProcessExit!)));
+  if (input.onProcessExit !== undefined)
+    yield* processExit.pipe(Effect.ignoreCause, Effect.forkScoped);
   const onStdoutChunk = input.onStdoutChunk;
   const writeStdin =
     stdin === undefined
@@ -360,7 +368,7 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
     { concurrency: "unbounded" },
   );
 
-  const exitCode = yield* child.exitCode.pipe(
+  const exitCode = yield* processExit.pipe(
     Effect.mapError(
       (cause) =>
         new ProcessReadError({

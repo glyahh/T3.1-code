@@ -3,6 +3,9 @@ import {
   CheckpointScopeId,
   CommandId,
   MessageId,
+  ModelSelection,
+  ProjectId,
+  OrchestrationV2ProviderThreadJson,
   NodeId,
   ProviderSessionId,
   RunAttemptId,
@@ -28,8 +31,25 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { forkParked } from "../serverActivation.ts";
+import { ProviderAdapterV2RuntimePolicy } from "@t3tools/provider-core/server/ProviderAdapter";
 
 export const OrchestrationEffectRequestV2 = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("provider-session.cancel-preparation"),
+    providerSessionId: ProviderSessionId,
+    preparationCommandId: CommandId,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("provider-session.prepare"),
+    providerSessionId: ProviderSessionId,
+    providerThreadId: ProviderThreadId,
+    modelSelection: ModelSelection,
+    runtimePolicy: ProviderAdapterV2RuntimePolicy,
+    configurationRevision: Schema.String,
+    draft: Schema.optional(
+      Schema.Struct({ projectId: ProjectId, providerThread: OrchestrationV2ProviderThreadJson }),
+    ),
+  }),
   Schema.Struct({
     type: Schema.Literal("provider-runtime.continue"),
     sourceRunId: RunId,
@@ -123,6 +143,7 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
 export type OrchestrationEffectRequestV2 = typeof OrchestrationEffectRequestV2.Type;
 
 export const REPLAY_SAFE_EFFECT_TYPES_AFTER_PROCESS_LOSS = [
+  "provider-session.cancel-preparation",
   "provider-runtime.continue",
   "provider-session.detach",
   "provider-thread.rollback",
@@ -136,6 +157,7 @@ export const REPLAY_SAFE_EFFECT_TYPES_AFTER_PROCESS_LOSS = [
 ] as const satisfies ReadonlyArray<OrchestrationEffectRequestV2["type"]>;
 
 export const PROCESS_BOUND_EFFECT_TYPES = [
+  "provider-session.prepare",
   "provider-turn.start",
   "provider-turn.interrupt",
   "provider-turn.steer",

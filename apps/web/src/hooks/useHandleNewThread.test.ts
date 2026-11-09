@@ -137,6 +137,10 @@ vi.mock("../rpc/atomRegistry", () => ({
         : testServerConfigs(),
   },
 }));
+vi.mock("../state/orchestration", () => ({
+  orchestrationEnvironment: { v2: { prepareProvider: "prepare-provider" } },
+}));
+vi.mock("@t3tools/client-runtime/state/runtime", () => ({ runAtomCommand: vi.fn() }));
 
 vi.mock("@effect/atom-react", () => ({
   useAtomValue: (atom: unknown) =>
@@ -205,6 +209,7 @@ vi.mock("../lib/t3ProjectFileDefaults", () => ({
   readT3ProjectFile: () => testState.projectFileRead,
 }));
 vi.mock("../lib/utils", () => ({
+  randomUUID: () => "prepare-command",
   newDraftId: () => "draft-delayed",
   newThreadId: () => "thread-delayed",
 }));

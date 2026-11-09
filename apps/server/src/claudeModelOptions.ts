@@ -12,6 +12,7 @@ import {
   isClaudeCatalogUltracodeEffort,
   normalizeClaudeCatalogEffort,
   resolveClaudeCatalogApiModelId,
+  resolveClaudeCatalogModel,
   resolveClaudeCatalogEffort,
   type ClaudeModelCatalog,
 } from "./provider/ClaudeModelCatalog.ts";
@@ -22,11 +23,14 @@ export interface CompiledClaudeModelSelection {
   readonly promptEffort: string | undefined;
   readonly settings: Readonly<Record<string, boolean>>;
   readonly queryIdentity: string;
+  readonly routingIdentity?: string;
+  readonly configurationRevision?: number;
 }
 
 export function compileClaudeModelSelection(
   selection: ModelSelection,
   catalog: ClaudeModelCatalog = BUNDLED_CLAUDE_MODEL_CATALOG,
+  configurationRevision = 0,
 ): CompiledClaudeModelSelection {
   const capabilities = getClaudeCatalogModelCapabilities(catalog, selection.model);
   const descriptors = getProviderOptionDescriptors({ caps: capabilities });
@@ -47,12 +51,21 @@ export function compileClaudeModelSelection(
     ...(isClaudeCatalogUltracodeEffort(resolvedEffort) ? { ultracode: true } : {}),
   };
   const apiModelId = resolveClaudeCatalogApiModelId(catalog, selection);
+  const routingIdentity = resolveClaudeCatalogModel(catalog, selection.model)?.routedModel;
   const promptEffort = resolvePromptInjectedEffort(capabilities, rawEffort) ?? undefined;
   return {
     apiModelId,
     effort,
     promptEffort,
     settings,
-    queryIdentity: JSON.stringify({ apiModelId, effort: effort ?? null, settings }),
+    configurationRevision,
+    ...(routingIdentity === undefined ? {} : { routingIdentity }),
+    queryIdentity: JSON.stringify({
+      apiModelId,
+      effort: effort ?? null,
+      settings,
+      routingIdentity,
+      configurationRevision,
+    }),
   };
 }

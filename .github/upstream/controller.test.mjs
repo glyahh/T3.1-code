@@ -16,7 +16,7 @@ NodeTest.test("cloud dispatch never invokes the legacy bot for Work Cloud", () =
     policyHash: "policy",
   };
   const policy = { maxRounds: 2 };
-  NodeAssert.equal(task(request, policy, 2, 1).startsWith("@codex "), true);
+  NodeAssert.equal(task(request, policy, 2, 1, "codex-cloud").startsWith("@codex "), true);
   const handoff = task(request, policy, 2, 1, "work-cloud");
   NodeAssert.equal(handoff.includes("@codex"), false);
   NodeAssert.equal(handoff.startsWith("<!-- t3-work-cloud:request -->"), true);

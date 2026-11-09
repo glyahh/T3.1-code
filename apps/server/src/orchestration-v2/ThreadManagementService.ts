@@ -100,6 +100,8 @@ function existingThreadIdsForCommand(
   switch (command.type) {
     case "thread.create":
       return [];
+    case "thread.provider.prepare":
+      return command.draft === undefined ? [command.threadId] : [];
     // Read-state commands only rewrite the thread payload's visited/unread
     // watermark and open stats; they never touch messages, so they do not need the imported
     // v1 transcript hydrated first. Visits fire on every thread-activity bump
@@ -705,6 +707,22 @@ const make = Effect.gen(function* () {
 
   const assertDispatchTargetEnabled = (command: OrchestrationV2ServerCommand) => {
     switch (command.type) {
+      case "thread.provider.prepare":
+        return (
+          command.draft === undefined
+            ? orchestrator
+                .getThreadRecords(command.threadId, [])
+                .pipe(Effect.map((projection) => projection.thread.projectId))
+            : Effect.succeed(command.draft.projectId)
+        ).pipe(
+          Effect.flatMap((projectId) =>
+            assertProviderInstanceEnabled({
+              projectId,
+              commandId: command.commandId,
+              instanceId: command.modelSelection.instanceId,
+            }),
+          ),
+        );
       case "message.dispatch":
         return orchestrator.getThreadRecords(command.threadId, []).pipe(
           Effect.flatMap((projection) =>

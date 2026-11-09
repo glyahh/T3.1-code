@@ -5,6 +5,7 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -901,7 +902,24 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         "-c",
         "splitIndex.sharedIndexExpire=never",
       ];
-      const { gitCommonDir, indexPath, headExists } = yield* resolveCaptureRepository(input.cwd);
+      // These reads are independent; scratch-index writes wait for all three results.
+      const [repository, sparseConfig, includedWorkspacePaths] = yield* Effect.gen(function* () {
+        const repositoryRead = yield* resolveCaptureRepository(input.cwd).pipe(Effect.forkScoped);
+        const sparseRead = yield* execute({
+          operation,
+          cwd: input.cwd,
+          args: ["config", "--bool", "core.sparseCheckout"],
+          allowNonZeroExit: true,
+        }).pipe(Effect.forkScoped);
+        const ignoredRead = yield* filterIgnoredPaths(input.cwd, ["."]).pipe(Effect.forkScoped);
+        // Preserve repository errors and close the other reads before returning a failure.
+        return [
+          yield* Fiber.join(repositoryRead),
+          yield* Fiber.join(sparseRead),
+          yield* Fiber.join(ignoredRead),
+        ] as const;
+      }).pipe(Effect.scoped);
+      const { gitCommonDir, indexPath, headExists } = repository;
       const indexId = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
       const tempIndexPath = path.join(gitCommonDir, `t3-checkpoint-index-${indexId}`);
       const commitEnv: NodeJS.ProcessEnv = {
@@ -920,12 +938,6 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       );
 
       yield* Effect.gen(function* () {
-        const sparseConfig = yield* execute({
-          operation,
-          cwd: input.cwd,
-          args: ["config", "--bool", "core.sparseCheckout"],
-          allowNonZeroExit: true,
-        });
         let sparseCheckout = sparseConfig.stdout.trim() === "true";
         if (sparseCheckout) {
           const help = yield* execute({
@@ -1050,7 +1062,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           }
         }
 
-        const workspaceIgnored = (yield* filterIgnoredPaths(input.cwd, ["."])).length === 0;
+        const workspaceIgnored = includedWorkspacePaths.length === 0;
         if (workspaceIgnored) {
           // HEAD omits staged-only paths. Seed just this workspace's additions, keeping
           // unrelated staged changes and the scratch index's sparse flags untouched.

@@ -1367,6 +1367,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
           ),
         ),
       ),
+      Effect.withSpan("AcpSessionRuntime.request", { attributes: { "acp.method": method } }),
     );
 
   const spawnCommand =
@@ -1453,8 +1454,12 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
         extendEnv: options.spawn.extendEnv ?? true,
         ...(options.ownDetachedProcessGroup === undefined
           ? {}
-          : { detached: options.ownDetachedProcessGroup }),
+          : // Windows cmd wrappers lose stdin when detached; taskkill still owns their tree.
+            {
+              detached: options.ownDetachedProcessGroup && options.processGroupPlatform !== "win32",
+            }),
         shell: containedSpawnCommand.shell,
+        windowsHide: true,
       }),
     )
     .pipe(
@@ -1777,14 +1782,31 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
             yield* Effect.logInfo("acp.latency.first_update", {
               sessionId: notification.sessionId,
               promptSequence,
-            });
+            }).pipe(
+              Effect.withSpan("acp.latency.first_update", {
+                attributes: {
+                  sessionId: notification.sessionId,
+                  promptSequence,
+                  updateType: notification.update.sessionUpdate,
+                },
+              }),
+            );
           }
-          if (!observedPromptText && notification.update.sessionUpdate === "agent_message_chunk") {
+          if (
+            !observedPromptText &&
+            notification.update.sessionUpdate === "agent_message_chunk" &&
+            notification.update.content.type === "text" &&
+            notification.update.content.text.length > 0
+          ) {
             observedPromptText = true;
             yield* Effect.logInfo("acp.latency.first_assistant_chunk", {
               sessionId: notification.sessionId,
               promptSequence,
-            });
+            }).pipe(
+              Effect.withSpan("acp.latency.first_assistant_text", {
+                attributes: { sessionId: notification.sessionId, promptSequence },
+              }),
+            );
           }
         }
         yield* processSessionUpdate(notification);

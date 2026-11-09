@@ -689,7 +689,7 @@ describe("rightPanelStore", () => {
     });
   });
 
-  it("persists inline preference without restoring an open popover", () => {
+  it("does not restore details visibility from persisted state", () => {
     expect(
       migratePersistedRightPanelState({
         threadPanelVisibilityByThreadKey: {
@@ -699,9 +699,7 @@ describe("rightPanelStore", () => {
       }),
     ).toEqual({
       byThreadKey: {},
-      threadPanelVisibilityByThreadKey: {
-        "env-1:thread-A": { inlineOpen: false, popoverOpen: false },
-      },
+      threadPanelVisibilityByThreadKey: {},
     });
   });
 
@@ -714,10 +712,10 @@ describe("rightPanelStore", () => {
         useRightPanelStore.getState().threadPanelVisibilityByThreadKey,
         refA,
       ),
-    ).toEqual({ inlineOpen: true, popoverOpen: false });
+    ).toEqual({ inlineOpen: false, popoverOpen: false });
   });
 
-  it("keeps an open popover visible by promoting it to inline when the real panel closes", () => {
+  it("keeps an explicitly opened popover visible when the right panel closes", () => {
     const store = useRightPanelStore.getState();
     store.open(refA, "diff");
     store.setThreadPanelOpen(refA, "inline", false);
@@ -729,7 +727,7 @@ describe("rightPanelStore", () => {
         useRightPanelStore.getState().threadPanelVisibilityByThreadKey,
         refA,
       ),
-    ).toEqual({ inlineOpen: true, popoverOpen: true });
+    ).toEqual({ inlineOpen: false, popoverOpen: true });
   });
 
   it("opens workspace-root links as the singleton files explorer", () => {

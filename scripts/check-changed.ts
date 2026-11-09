@@ -19,7 +19,9 @@
 // TIMEOUT. A rerun on exactly the files of the last passing run prints that
 // run's summary.
 import * as NodeCrypto from "node:crypto";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -39,8 +41,22 @@ import { Argument, Command, Flag } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { decide, readWorkspace } from "../.github/scripts/ci-changes.cjs";
+import { summarizeTestProgress } from "./lib/check-test-progress.ts";
+import { checkCommandLauncherPath } from "./lib/run-check-command.ts";
+import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 
 const GiB = 1024 ** 3;
+const encodeCheckInvocation = Schema.encodeEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      command: Schema.String,
+      args: Schema.Array(Schema.String),
+      shell: Schema.Boolean,
+      node: Schema.String,
+      launcher: Schema.String,
+    }),
+  ),
+);
 
 // A typecheck or test step can take several cores and gigabytes of memory, so
 // allow one step per two cores and per 6 GiB of available memory.
@@ -142,6 +158,50 @@ export const git = Effect.fn("checkChanged.git")(function* (
 export const gitLines = (cwd: string, args: ReadonlyArray<string>) =>
   git(cwd, args).pipe(Effect.map((stdout) => stdout.toString().split("\n").filter(Boolean)));
 
+const ignoredCheckInputs = Effect.fn("checkChanged.ignoredCheckInputs")(function* (root: string) {
+  // Git for Windows follows pnpm junctions before applying negative pathspecs.
+  // Collapse ignored directories first, then prune dependencies before descending.
+  const ignored = yield* gitLines(root, [
+    "ls-files",
+    "--others",
+    "--ignored",
+    "--exclude-standard",
+    "--directory",
+    "--no-empty-directory",
+  ]);
+  const tracked = new Set(yield* gitLines(root, ["ls-files"]));
+  return yield* Effect.tryPromise({
+    try: async () => {
+      const inputs: string[] = [];
+      const visit = async (relative: string): Promise<void> => {
+        const parts = relative.split("/");
+        if (parts.includes("node_modules") || parts.includes(".git")) return;
+        const absolute = NodePath.join(root, relative);
+        const info = await NodeFSP.lstat(absolute).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return undefined;
+          throw error;
+        });
+        if (info === undefined) return;
+        if (info.isSymbolicLink()) return;
+        if (info.isDirectory()) {
+          for (const entry of await NodeFSP.readdir(absolute)) await visit(relative + "/" + entry);
+        } else if (
+          info.isFile() &&
+          !tracked.has(relative) &&
+          (parts.includes(".generated") ||
+            parts.includes(".astro") ||
+            relative.endsWith(".d.ts") ||
+            parts.at(-1)?.startsWith(".env"))
+        )
+          inputs.push(relative);
+      };
+      for (const entry of ignored) await visit(entry.replace(/\/$/, ""));
+      return inputs.sort();
+    },
+    catch: (error) => `check:changed: could not enumerate ignored check inputs: ${String(error)}`,
+  });
+});
+
 export const comparisonBase = Effect.fn("checkChanged.comparisonBase")(function* (
   root: string,
   explicitRef: Option.Option<string>,
@@ -235,10 +295,19 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
   // Include them in the key, but skip large ignored folders that no check reads.
   // Recompute after a passing run so edits made during it are never cached as passing.
   const ci = Option.getOrElse(yield* Config.option(Config.String("CI")), () => "");
+  const executionContext = {
+    platform,
+    concurrency,
+    timeoutSeconds,
+    temporaryDirectory: NodeOS.tmpdir(),
+    symlinksSupported,
+  };
+  yield* Console.log("Check execution context:", executionContext);
   const inputKey = Effect.gen(function* () {
     const hash = NodeCrypto.createHash("sha256");
     // CI changes test behavior (vite.config.ts rejects .only under CI).
     hash.update(`${process.version}\0${base}\0${ci}\0`);
+    hash.update(`${Object.values(executionContext).join("\0")}\0`);
     hash.update(
       yield* git(root, [
         "diff",
@@ -250,18 +319,7 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
         "--",
       ]),
     );
-    const ignored = yield* lines(
-      "ls-files",
-      "--others",
-      "--ignored",
-      "--exclude-standard",
-      "--",
-      ":(glob)**/.generated/**",
-      ":(glob)**/.astro/**",
-      ":(glob)**/*.d.ts",
-      ":(glob)**/.env*",
-      ":(exclude,glob)**/node_modules/**",
-    );
+    const ignored = yield* ignoredCheckInputs(root);
     for (const file of [
       // Raw bytes of changed files too: .gitattributes normalizes line endings in
       // the diff, but the formatter reads the file as it is on disk.
@@ -306,7 +364,7 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
     const dir = path.dirname(file);
     const prefix = `${path.basename(file).replace(CODE, "")}.`;
     for (const entry of yield* fs.readDirectory(inRoot(dir))) {
-      if (entry.startsWith(prefix) && TEST.test(entry)) tests.add(path.join(dir, entry));
+      if (entry.startsWith(prefix) && TEST.test(entry)) tests.add(`${dir}/${entry}`);
     }
   }
   // It reads files other than the ones beside it, so no changed file selects it.
@@ -383,14 +441,106 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
   const vp = (args: ReadonlyArray<string>, cwd = root) =>
     Effect.scoped(
       Effect.gen(function* () {
+        const streamOutput = args[0] === "test";
+        const commandDirectory =
+          streamOutput || platform === "win32"
+            ? yield* fs.makeTempDirectory({ prefix: "t3-check-progress-" })
+            : undefined;
+        const progressFile = streamOutput
+          ? path.join(commandDirectory!, "events.ndjson")
+          : undefined;
+        if (progressFile) yield* Console.log(`Test progress: ${progressFile}`);
+        const commandArgs = progressFile
+          ? [
+              ...args,
+              "--reporter=default",
+              "--reporter",
+              inRoot("scripts/lib/check-test-progress.ts"),
+            ]
+          : args;
+        const progressSummary = Effect.gen(function* () {
+          if (!progressFile) return undefined;
+          const contents = yield* fs
+            .readFileString(progressFile)
+            .pipe(Effect.orElseSucceed(() => ""));
+          const summary = summarizeTestProgress(contents);
+          yield* Console.log("Test progress summary:", summary);
+          return summary;
+        });
+        let command = "vp";
+        let spawnArgs: ReadonlyArray<string> = commandArgs;
+        let invocationFile: string | undefined;
+        if (platform === "win32") {
+          invocationFile = path.join(commandDirectory!, "invocation.json");
+          const encoded = yield* encodeCheckInvocation({
+            command: process.execPath,
+            args: [inRoot("node_modules/vite-plus/bin/vp"), ...commandArgs],
+            shell: false,
+            node: process.execPath,
+            launcher: checkCommandLauncherPath,
+          });
+          yield* fs.writeFileString(invocationFile, encoded);
+          command = "powershell.exe";
+          spawnArgs = [
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            yield* fs.readFileString(inRoot("scripts/lib/run-check-job.ps1")),
+          ];
+        }
         const handle = yield* spawner.spawn(
-          ChildProcess.make("vp", args, { cwd, env, extendEnv: true, forceKillAfter: "5 seconds" }),
+          ChildProcess.make(command, spawnArgs, {
+            cwd,
+            env: {
+              ...env,
+              ...(platform === "win32" && args[0] === "test" && args.includes("--fileParallelism")
+                ? { T3CODE_CHECK_CHANGED_WINDOWS: "1" }
+                : {}),
+              ...(progressFile ? { T3CODE_CHECK_CHANGED_PROGRESS_FILE: progressFile } : {}),
+              ...(invocationFile ? { T3CODE_CHECK_CHANGED_INVOCATION_FILE: invocationFile } : {}),
+            },
+            extendEnv: true,
+            forceKillAfter: "5 seconds",
+          }),
         );
-        const [output, exitCode] = yield* Effect.all(
-          [Stream.mkString(Stream.decodeText(handle.all)), handle.exitCode],
+        yield* Console.log(
+          `Check process started: pid=${handle.pid}; command=vp ${args.slice(0, 2).join(" ")}`,
+        );
+        let output = "";
+        const [, exitCode] = yield* Effect.all(
+          [
+            Stream.runForEach(Stream.decodeText(handle.all), (chunk) =>
+              Effect.gen(function* () {
+                output += chunk;
+                if (streamOutput) yield* Console.log(chunk.trimEnd());
+              }),
+            ),
+            handle.exitCode,
+          ],
           { concurrency: 2 },
+        ).pipe(
+          Effect.onInterrupt(() =>
+            Effect.gen(function* () {
+              if (!streamOutput)
+                yield* Console.log(`Interrupted command output (partial):\n${output}`);
+              yield* progressSummary;
+              if (platform !== "win32") return;
+              if (yield* handle.isRunning) yield* handle.kill();
+              yield* handle.exitCode;
+              yield* Console.log(
+                `Windows job closed: wrapper pid=${handle.pid}; descendant cleanup is owned by the job.`,
+              );
+            }).pipe(Effect.scoped, Effect.ignoreCause({ log: true })),
+          ),
         );
-        return { ok: exitCode === 0, output };
+        yield* Console.log(
+          `Check process exited: pid=${handle.pid}; code=${exitCode}${platform === "win32" ? "; Windows job closed" : ""}`,
+        );
+        yield* progressSummary;
+        return { ok: exitCode === 0, output: streamOutput ? "" : output };
       }),
     ).pipe(Effect.catch((error) => Effect.succeed({ ok: false, output: error.message })));
 
@@ -478,8 +628,13 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
               "test",
               "run",
               "--passWithNoTests",
+              "--maxWorkers",
+              String(concurrency),
+              // Windows process startup dominates this gate; direct package tests keep their scheduling.
+              ...(platform === "win32" ? ["--fileParallelism"] : []),
               ...tests,
             ]),
+            weight: concurrency,
             serial: true,
           },
         ]
@@ -490,10 +645,13 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
             ...command(`react compiler (${compilerFiles} files)`, [
               "test",
               "run",
+              "--maxWorkers",
+              String(concurrency),
               ...compilerApps.map((app) => app.test),
               "-t",
               compilerApps.flatMap((app) => app.pattern).join("|"),
             ]),
+            weight: concurrency,
             serial: true,
           },
         ]
@@ -508,8 +666,8 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
   }
   if (results.some((result) => result.outcome === "TIMEOUT")) {
     summary.push(
-      `  TIMEOUT: ran past ${timeoutSeconds}s and was killed; this is not a check failure. ` +
-        "Raise --timeout or lower --concurrency.",
+      `  TIMEOUT: did not complete within ${timeoutSeconds}s; the gate has not passed. ` +
+        "Inspect the retained progress and cleanup records for unfinished work.",
     );
   }
   const ciOnly = Object.entries({

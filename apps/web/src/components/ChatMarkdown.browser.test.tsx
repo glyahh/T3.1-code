@@ -408,7 +408,7 @@ describe("ChatMarkdown Windows file links", () => {
       );
       const { container } = screen;
       expect(container.innerHTML).not.toContain("javascript:");
-      expect(container.innerHTML).not.toContain("d:alert");
+      expect(container.innerHTML, `parseRawHtml=${parseRawHtml}`).not.toContain("d:alert");
       expect(fileHrefs(container)).toEqual([]);
     }
   });

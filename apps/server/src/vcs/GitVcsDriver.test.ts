@@ -958,11 +958,9 @@ it.effect.each(["committed", "unborn"] as const)(
 
       const commands = yield* captureRecordingGitCommands(cwd, checkpointRef);
 
-      assert.deepStrictEqual(commands, [
-        "rev-parse",
-        "config",
+      assert.deepStrictEqual(commands.slice(0, 3).sort(), ["check-ignore", "config", "rev-parse"]);
+      assert.deepStrictEqual(commands.slice(3), [
         ...(head === "committed" ? ["read-tree", "ls-files"] : []),
-        "check-ignore",
         "add",
         "write-tree",
         "commit-tree",

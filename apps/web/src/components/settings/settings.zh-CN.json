@@ -1198,6 +1198,8 @@
   "Managed binary cleanup failed.": "托管二进制清理失败。",
   "Could not reset provider instance": "无法重置提供方实例",
   "Refresh provider status": "刷新提供方状态",
+  "Refresh current configuration": "刷新当前配置",
+  "Could not refresh provider configuration": "无法刷新供应商配置",
   "Refreshing providers": "刷新提供方",
   "Limited permissions": "权限有限",
   "This provider instance is no longer available on this device.": "该提供方实例在此设备上不再可用。",

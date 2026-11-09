@@ -1296,7 +1296,16 @@ export const layer: Layer.Layer<
               threadId: input.run.threadId,
               runId: input.run.id,
               attemptId: input.attempt.id,
-            });
+            }).pipe(
+              Effect.withSpan("run.latency.milestone", {
+                attributes: {
+                  stage,
+                  threadId: input.run.threadId,
+                  runId: input.run.id,
+                  attemptId: input.attempt.id,
+                },
+              }),
+            );
           });
         yield* milestone("provider_subscription_ready");
         const filterAssistantEvent = makeAssistantStreamingFilter(responseStreamingMode);

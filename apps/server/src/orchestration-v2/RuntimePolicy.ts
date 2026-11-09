@@ -41,7 +41,12 @@ export type RuntimePolicyV2Override = typeof RuntimePolicyV2Override.Type;
 
 export interface RuntimePolicyV2Shape {
   readonly resolve: (input: {
-    readonly thread: OrchestrationV2AppThread;
+    readonly thread:
+      | OrchestrationV2AppThread
+      | Pick<
+          OrchestrationV2AppThread,
+          "projectId" | "worktreePath" | "runtimeMode" | "interactionMode"
+        >;
     readonly modelSelection: ModelSelection;
   }) => Effect.Effect<ProviderAdapter.ProviderAdapterV2RuntimePolicy, RuntimePolicyV2Error>;
 }

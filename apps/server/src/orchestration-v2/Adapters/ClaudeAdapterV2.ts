@@ -62,7 +62,10 @@ import { parseCliArgs } from "@t3tools/shared/cliArgs";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
 import { AgentScope } from "@t3tools/shared/AgentScope";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { applyClaudePromptEffortPrefix } from "@t3tools/shared/model";
+import {
+  applyClaudePromptEffortPrefix,
+  getModelSelectionStringOptionValue,
+} from "@t3tools/shared/model";
 import {
   CLAUDE_RESUME_COMPACTION_COMPACT_ANSWER,
   CLAUDE_RESUME_COMPACTION_NEVER_ANSWER,
@@ -141,6 +144,7 @@ import {
 import {
   claudeLaunchArgDirectories,
   discoverClaudeSkills,
+  readClaudeModelRouting,
 } from "../../provider/Drivers/ClaudeSkills.ts";
 import {
   compileClaudeModelSelection,
@@ -1378,6 +1382,8 @@ function canApplyClaudeSelectionLive(
   next: CompiledClaudeModelSelection,
 ): boolean {
   return (
+    live.routingIdentity === next.routingIdentity &&
+    live.configurationRevision === next.configurationRevision &&
     live.settings.alwaysThinkingEnabled === next.settings.alwaysThinkingEnabled &&
     (next.effort !== undefined || live.effort === undefined)
   );
@@ -1460,6 +1466,7 @@ const subagentDeviceInstructions: HookCallback = () =>
 
 export function makeClaudeQueryOptions(input: {
   readonly modelSelection: ModelSelection;
+  readonly compiledSelection?: CompiledClaudeModelSelection;
   readonly nativeThreadId: string;
   readonly resume: boolean;
   readonly resumeSessionAt?: string;
@@ -1484,7 +1491,8 @@ export function makeClaudeQueryOptions(input: {
   // Flag settings, because a user's settings.json env beats the process env in Claude Code.
   readonly toolSearchOverride?: "true";
 }): ClaudeAgentSdkQueryOptions {
-  const compiledSelection = compileClaudeModelSelection(input.modelSelection);
+  const compiledSelection =
+    input.compiledSelection ?? compileClaudeModelSelection(input.modelSelection);
   const {
     // claudeLaunchArgDirectories reads every --add-dir into additionalDirectories.
     "add-dir": _launchArgAddDir,
@@ -4496,6 +4504,7 @@ export interface ClaudeAdapterV2Options {
   readonly instanceId: ProviderInstanceId;
   readonly settings: ClaudeSettings;
   readonly environment: NodeJS.ProcessEnv;
+  readonly configurationRevision?: Effect.Effect<number>;
   readonly attachmentsDir: string;
   readonly fileSystem: FileSystem.FileSystem;
   readonly path: Path.Path;
@@ -4512,12 +4521,50 @@ export interface ClaudeAdapterV2Options {
 }
 
 export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
-  adapterOptions: ClaudeAdapterV2Options,
+  inputOptions: ClaudeAdapterV2Options,
 ) {
+  const adapterOptions = {
+    ...inputOptions,
+    environment: yield* makeClaudeEnvironment(inputOptions.settings, inputOptions.environment),
+  };
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
   const { attachmentsDir, fileSystem, path, crypto, idAllocator, queryRunner } = adapterOptions;
+  const scopedCatalog = readClaudeModelRouting(
+    adapterOptions.settings,
+    adapterOptions.environment,
+  ).pipe(
+    Effect.map((routing) =>
+      scopeClaudeModelCatalog(
+        BUNDLED_CLAUDE_MODEL_CATALOG,
+        adapterOptions.settings.customModels,
+        routing,
+      ),
+    ),
+    Effect.provideService(FileSystem.FileSystem, fileSystem),
+    Effect.provideService(Path.Path, path),
+  );
+  const compileSelection = Effect.fn("ClaudeAdapterV2.compileSelection")(function* (
+    selection: ModelSelection,
+  ) {
+    const catalog = yield* scopedCatalog;
+    const configurationRevision = yield* adapterOptions.configurationRevision ?? Effect.succeed(0);
+    const compiled = yield* Effect.try({
+      try: () => compileClaudeModelSelection(selection, catalog, configurationRevision),
+      catch: (cause) => queryRunnerError(cause, "compileSelection"),
+    });
+    const requestedEffort = getModelSelectionStringOptionValue(selection, "effort");
+    if (compiled.routingIdentity !== undefined && requestedEffort !== compiled.effort) {
+      yield* Effect.logInfo("provider.model-option.normalized", {
+        providerInstanceId: adapterOptions.instanceId,
+        model: compiled.routingIdentity,
+        requestedEffort,
+        effectiveEffort: compiled.effort,
+      });
+    }
+    return compiled;
+  });
   const subagentModelCatalog = scopeClaudeModelCatalog(
     BUNDLED_CLAUDE_MODEL_CATALOG,
     adapterOptions.settings.customModels,
@@ -6412,7 +6459,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             existingSubagent === undefined
               ? (input.effort ??
                 input.owner?.effort ??
-                compileClaudeModelSelection(input.context.input.modelSelection).effort)
+                (yield* compileSelection(input.context.input.modelSelection)).effort)
               : existingSubagent.effort;
           const model = input.model ?? priorTask?.model ?? null;
           const task = {
@@ -10336,7 +10383,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               : { allowedTools: queryPolicy.allowedTools }),
           });
           const queryPolicyKey = claudeEffectiveQueryPolicyKey(queryPolicy, mcpOverrides);
-          const compiledSelection = compileClaudeModelSelection(turnInput.modelSelection);
+          const compiledSelection = yield* compileSelection(turnInput.modelSelection);
           const resumeSessionAt = yield* getNativeConversationHeadId(turnInput.providerThread);
           const existing = yield* Ref.get(queryContext);
           // Continuations drain existing output without prompting; retain the live process regardless of selection.
@@ -10451,6 +10498,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           );
           const queryOptions = makeClaudeQueryOptions({
             modelSelection: turnInput.modelSelection,
+            compiledSelection,
             nativeThreadId,
             resume: shouldResume,
             ...(resumeSessionAt === undefined ? {} : { resumeSessionAt }),
@@ -10664,7 +10712,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 : yield* makeClaudeUserMessageWithAttachments({
                     text: applyClaudePromptEffortPrefix(
                       turnInput.message.text,
-                      compileClaudeModelSelection(turnInput.modelSelection).promptEffort,
+                      (yield* compileSelection(turnInput.modelSelection)).promptEffort,
                     ),
                     attachments: turnInput.message.attachments,
                     attachmentsDir,
@@ -11109,7 +11157,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             const userMessage = yield* makeClaudeUserMessageWithAttachments({
               text: applyClaudePromptEffortPrefix(
                 turnInput.message.text,
-                compileClaudeModelSelection(currentTurn.input.modelSelection).promptEffort,
+                (yield* compileSelection(currentTurn.input.modelSelection)).promptEffort,
               ),
               attachments: turnInput.message.attachments,
               priority: "now",
@@ -11743,7 +11791,10 @@ export type ClaudeAdapterV2DriverEnv =
 export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
   function* (
     input: ProviderAdapterDriverCreateInput<ClaudeSettings>,
-    hooks: Pick<ClaudeAdapterV2Options, "scopedLimitNames" | "onUsageLimits"> = {},
+    hooks: Pick<
+      ClaudeAdapterV2Options,
+      "scopedLimitNames" | "onUsageLimits" | "configurationRevision"
+    > = {},
   ) {
     const { instanceId, environment, enabled, config } = input;
     const fileSystem = yield* FileSystem.FileSystem;

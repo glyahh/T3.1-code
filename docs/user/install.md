@@ -195,6 +195,11 @@ instance can have its own environment variables, such as API keys or a custom
 base URL. Mark secret values as sensitive; after saving, T3 Code does not display
 their original values.
 
+After changing an agent's account, plan, or model routing outside T3 Code, select
+its instance in **Settings > Providers** and choose **Refresh current configuration**
+to reload account status, available models, and capabilities. Antigravity uses the
+account signed into that T3 Code instance, separately from the IDE.
+
 For provider-specific setup and accounts, see [Codex](./providers-codex.md),
 [Claude](./providers-claude.md), [OpenCode](./providers-opencode.md),
 [Antigravity](./providers-antigravity.md), [Pi](./providers-pi.md),

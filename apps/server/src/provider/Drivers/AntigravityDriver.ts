@@ -267,18 +267,16 @@ export const AntigravityDriver: ProviderDriver<
           `${sessionId}.db`,
         );
         if (
-          yield* fileSystem
-            .exists(filename)
-            .pipe(
-              Effect.mapError(
-                (cause) =>
-                  new AcpTransportError({
-                    method: "session/resume",
-                    detail: "Could not inspect Antigravity history",
-                    cause,
-                  }),
-              ),
-            )
+          yield* fileSystem.exists(filename).pipe(
+            Effect.mapError(
+              (cause) =>
+                new AcpTransportError({
+                  method: "session/resume",
+                  detail: "Could not inspect Antigravity history",
+                  cause,
+                }),
+            ),
+          )
         )
           yield* assertAntigravityResumeSafe(filename);
       });
@@ -581,6 +579,7 @@ export const AntigravityDriver: ProviderDriver<
       orchestrationAdapter,
       textGeneration,
       auth: authFlow.controller,
+      invalidateCaches: usage.clear,
       refreshModels,
     } satisfies ProviderInstance;
   }),

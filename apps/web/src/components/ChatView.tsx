@@ -2815,6 +2815,7 @@ export default function ChatView(props: ChatViewProps) {
     handleRuntimeModeChangeStable,
     onEnvModeChangeStable,
     onProviderModelSelectStable,
+    onPrepareProviderStable,
     onStartFromOriginChange,
     openProviderSetupStable,
     toggleInteractionModeStable,
@@ -3694,6 +3695,7 @@ export default function ChatView(props: ChatViewProps) {
                                 onChangeActivePendingUserInputCustomAnswer
                               }
                               onProviderModelSelect={onProviderModelSelectStable}
+                              onPrepareProvider={onPrepareProviderStable}
                               onOpenProviderSetup={openProviderSetupStable}
                               getModelDisabledReason={getModelDisabledReason}
                               toggleInteractionMode={toggleInteractionModeStable}

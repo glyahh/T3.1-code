@@ -173,7 +173,7 @@ function v2Item(type: string, fields: Record<string, unknown>) {
       title: null,
       startedAt: null,
       completedAt: null,
-      updatedAt: {},
+      updatedAt: DateTime.makeUnsafe(CREATED_AT),
       type,
       ...fields,
     },
@@ -1484,11 +1484,11 @@ it.each(["completed", "failed", "interrupted"] as const)(
     );
     await using screen = await renderElement(ui(false));
     await expect
-      .element(screen.getByRole("button", { name: "Read 1 file", exact: true }))
+      .element(screen.getByRole("button", { name: "2 file reads", exact: true }))
       .toBeVisible();
     await screen.rerender(ui(false, false));
     await expect
-      .element(screen.getByRole("button", { name: "Read 2 files", exact: true }))
+      .element(screen.getByRole("button", { name: "2 file reads", exact: true }))
       .toBeVisible();
     await expect.element(screen.getByText("Planning next move").first()).toBeVisible();
     const disclosure = () => {

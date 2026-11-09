@@ -254,8 +254,7 @@ function TelemetryExportForm() {
                   {override?.variable && (
                     <>
                       {settingsText(" ")}
-                      {settingsText("from")}
-                      <code className="font-mono">{override.variable}</code>
+                      {settingsText("from")} <code className="font-mono">{override.variable}</code>
                     </>
                   )}
                 </p>

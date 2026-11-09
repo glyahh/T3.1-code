@@ -6,6 +6,14 @@ shared provider settings.
 
 ## Separate accounts or configurations
 
+For a Claude instance managed by CC Switch, change the profile there, then select
+the same instance in **Settings > Providers** and choose **Refresh current configuration**.
+The next new message in an existing thread reloads the account and model routing;
+its history and selected model role stay in place. Removed gateway addresses and
+credentials are not inherited from the old profile. Finish active background work
+before a query needs to be replaced. Independently configured instances keep their
+explicit environment overrides.
+
 Use a separate Claude config directory for each account. This also works for named
 presets that need different Claude settings or a router connection.
 

@@ -32,11 +32,32 @@ export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function
   baseEnv?: NodeJS.ProcessEnv,
 ): Effect.fn.Return<NodeJS.ProcessEnv, never, Path.Path> {
   const resolvedBaseEnv = baseEnv ?? process.env;
+  let environment = resolvedBaseEnv;
+  if (resolvedBaseEnv.CCSWITCH_CONFIG_REVISION?.trim()) {
+    environment = { ...resolvedBaseEnv };
+    const accountKeys = new Set([
+      "ANTHROPIC_BASE_URL",
+      "ANTHROPIC_AUTH_TOKEN",
+      "ANTHROPIC_API_KEY",
+      "ANTHROPIC_CUSTOM_HEADERS",
+      "CLAUDE_CODE_OAUTH_TOKEN",
+      "CLAUDE_CODE_OAUTH_TOKEN_FD",
+      "CLAUDE_CODE_API_KEY_FD",
+      "CLAUDE_CODE_USE_BEDROCK",
+      "CLAUDE_CODE_USE_VERTEX",
+      "CLAUDE_CODE_USE_FOUNDRY",
+    ]);
+    for (const key of Object.keys(resolvedBaseEnv)) {
+      if (/^ANTHROPIC_/i.test(key) || accountKeys.has(key.toUpperCase())) accountKeys.add(key);
+    }
+    // Native settings own this account; undefined also masks the SDK's process.env merge.
+    for (const key of accountKeys) environment[key] = undefined;
+  }
   const homePath = config.homePath.trim();
-  if (homePath.length === 0) return resolvedBaseEnv;
+  if (homePath.length === 0) return environment;
   const resolvedHomePath = yield* resolveClaudeHomePath(config);
   return {
-    ...resolvedBaseEnv,
+    ...environment,
     // Changing HOME hides macOS Keychain credentials; use CLAUDE_CONFIG_DIR to keep login access.
     CLAUDE_CONFIG_DIR: resolvedHomePath,
   };

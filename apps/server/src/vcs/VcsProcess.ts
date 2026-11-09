@@ -24,6 +24,7 @@ import type { SourceControlProcessInput } from "@t3tools/source-control-core/ser
 
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";
 import * as ProcessRunner from "../processRunner.ts";
+import { withGitConfigAccess } from "./gitConfigAccess.ts";
 
 export interface VcsProcessInput {
   readonly operation: string;
@@ -198,58 +199,68 @@ export const make = Effect.gen(function* () {
     baseError: VcsProcessErrorContext,
   ) {
     let failedExit = false;
-    const execution = processRunner
-      .run({
-        command: input.command,
-        args: input.args,
-        cwd: input.cwd,
-        ...(input.spawnCwd !== undefined ? { spawnCwd: input.spawnCwd } : {}),
-        ...(input.stdin !== undefined ? { stdin: input.stdin } : {}),
-        ...(input.onStdoutChunk !== undefined ? { onStdoutChunk: input.onStdoutChunk } : {}),
-        env: {
-          ...input.env,
-          ...explicitBareRepositoryEnv({ ...process.env, ...input.env }, hostPlatform),
-        },
-        timeout: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-        maxOutputBytes: input.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,
-        outputMode: input.outputMode ?? "truncate",
-        truncatedMarker: input.appendTruncationMarker ? OUTPUT_TRUNCATED_MARKER : "",
-        timeoutBehavior: "error",
-      })
-      .pipe(
-        Effect.tap((result) => {
-          failedExit = result.code === null || (!input.allowNonZeroExit && result.code !== 0);
-          return Effect.void;
-        }),
-        Effect.mapError(
-          Match.valueTags({
-            ProcessSpawnError: (error) =>
-              VcsProcessSpawnError.fromProcessSpawnError(baseError, error),
-            ProcessOutputLimitError: (error) =>
-              new VcsProcessOutputLimitError({
-                ...baseError,
-                stream: error.stream,
-                maxBytes: error.maxBytes,
-                observedBytes: error.observedBytes,
-              }),
-            ProcessTimeoutError: (error) =>
-              VcsProcessTimeoutError.fromProcessTimeoutError(baseError, error),
-            ProcessStdinError: (error) =>
-              new VcsProcessStdinWriteError({
-                ...baseError,
-                stdinBytes: error.stdinBytes,
-                cause: error.cause,
-              }),
-            ProcessReadError: (error) =>
-              new VcsProcessOutputReadError({
-                ...baseError,
-                stream: error.stream,
-                cause: error.cause,
-              }),
+    const run = (onProcessExit?: Effect.Effect<void>) =>
+      processRunner
+        .run({
+          command: input.command,
+          args: input.args,
+          cwd: input.cwd,
+          ...(input.spawnCwd !== undefined ? { spawnCwd: input.spawnCwd } : {}),
+          ...(input.stdin !== undefined ? { stdin: input.stdin } : {}),
+          ...(input.onStdoutChunk !== undefined ? { onStdoutChunk: input.onStdoutChunk } : {}),
+          ...(onProcessExit === undefined ? {} : { onProcessExit }),
+          env: {
+            ...input.env,
+            ...explicitBareRepositoryEnv({ ...process.env, ...input.env }, hostPlatform),
+          },
+          timeout: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+          maxOutputBytes: input.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,
+          outputMode: input.outputMode ?? "truncate",
+          truncatedMarker: input.appendTruncationMarker ? OUTPUT_TRUNCATED_MARKER : "",
+          timeoutBehavior: "error",
+        })
+        .pipe(
+          Effect.tap((result) => {
+            failedExit = result.code === null || (!input.allowNonZeroExit && result.code !== 0);
+            return Effect.void;
           }),
-        ),
-      );
+          Effect.mapError(
+            Match.valueTags({
+              ProcessSpawnError: (error) =>
+                VcsProcessSpawnError.fromProcessSpawnError(baseError, error),
+              ProcessOutputLimitError: (error) =>
+                new VcsProcessOutputLimitError({
+                  ...baseError,
+                  stream: error.stream,
+                  maxBytes: error.maxBytes,
+                  observedBytes: error.observedBytes,
+                }),
+              ProcessTimeoutError: (error) =>
+                VcsProcessTimeoutError.fromProcessTimeoutError(baseError, error),
+              ProcessStdinError: (error) =>
+                new VcsProcessStdinWriteError({
+                  ...baseError,
+                  stdinBytes: error.stdinBytes,
+                  cause: error.cause,
+                }),
+              ProcessReadError: (error) =>
+                new VcsProcessOutputReadError({
+                  ...baseError,
+                  stream: error.stream,
+                  cause: error.cause,
+                }),
+            }),
+          ),
+        );
 
+    const execution =
+      input.command === "git" && hostPlatform === "win32"
+        ? withGitConfigAccess(
+            { ...input, cwd: input.spawnCwd ?? input.cwd },
+            run,
+            (cause) => new VcsProcessSpawnError({ ...baseError, cause }),
+          )
+        : run();
     return yield* input.command === "git"
       ? execution.pipe(
           withMetrics({

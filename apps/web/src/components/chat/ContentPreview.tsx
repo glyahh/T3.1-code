@@ -9,7 +9,7 @@ export const ContentPreviewPinContext = createContext<((open: boolean) => void) 
 
 export const ContentPreviewContext = createContext(false);
 
-export function ExpandContentButton({
+function ExpandContentButton({
   disabled = false,
   onClick,
 }: {
