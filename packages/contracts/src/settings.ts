@@ -357,6 +357,7 @@ export const ClientSettingsSchema = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed("red-green" as const)),
   ),
   chatWidth: ChatWidth.pipe(Schema.withDecodingDefault(Effect.succeed("comfortable" as const))),
+  unifiedSidebarBackground: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   effortDisplay: EffortDisplay.pipe(Schema.withDecodingDefault(Effect.succeed("label" as const))),
   loadBalancingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   loadBalancingWeights: LoadBalancingWeights.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
@@ -981,7 +982,7 @@ export const BackgroundActivitySettings = Schema.Struct({
 }).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
-export const ResponseStreamingMode = Schema.Literals(["turn", "paragraph"]);
+export const ResponseStreamingMode = Schema.Literals(["turn", "paragraph", "live"]);
 export type ResponseStreamingMode = typeof ResponseStreamingMode.Type;
 
 const StorageRetentionDays = Schema.NullOr(
@@ -1195,7 +1196,7 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   responseStreamingMode: ResponseStreamingMode.pipe(
-    Schema.withDecodingDefault(Effect.succeed("paragraph" as const)),
+    Schema.withDecodingDefault(Effect.succeed("live" as const)),
   ),
   enableProviderUpdateChecks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   continueThreadsAfterServerUpdate: Schema.Boolean.pipe(
@@ -1723,6 +1724,7 @@ export const ClientSettingsPatch = Schema.Struct({
   inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
   diffColorScheme: Schema.optionalKey(DiffColorScheme),
   chatWidth: Schema.optionalKey(ChatWidth),
+  unifiedSidebarBackground: Schema.optionalKey(Schema.Boolean),
   effortDisplay: Schema.optionalKey(EffortDisplay),
   loadBalancingEnabled: Schema.optionalKey(Schema.Boolean),
   loadBalancingWeights: Schema.optionalKey(LoadBalancingWeights),

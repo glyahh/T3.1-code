@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import {
   lazy,
   Suspense,
@@ -127,6 +128,8 @@ function SettingsSectionIcon({ to }: { to: SettingsPath }) {
 }
 
 export function SettingsSidebarNav({ pathname }: { pathname: string }) {
+  const settingsText = useSettingsText();
+
   const navArea = workspaceAreaProps("settings-nav", 0, "Settings sections");
   const navigate = useNavigate();
   const currentHash = useLocation({ select: (location) => location.hash });
@@ -145,7 +148,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const [compactSearchOpen, setCompactSearchOpen] = useState(false);
   const [activeResultIndex, setActiveResultIndex] = useState(0);
   const searchableItems = useAvailableSettingsSearchItems(scopeSearch);
-  const results = searchSettings(query, searchableItems);
+  const results = searchSettings(query, searchableItems, settingsText);
   const isSearching = query.trim().length > 0;
   const hasResults = results.length > 0;
   const maxResultIndex = Math.max(results.length - 1, 0);
@@ -227,6 +230,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   };
 
   const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     if (event.key === "Escape" && isSearching) {
       event.preventDefault();
       event.stopPropagation();
@@ -271,10 +275,11 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
               )}
             >
               <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
+              {/* Native search inputs clear on Escape even during IME composition. */}
               <SidebarInput
                 ref={searchInputRef}
                 nativeInput
-                type="search"
+                type="text"
                 value={query}
                 onChange={(event) => {
                   setQuery(event.currentTarget.value);
@@ -285,8 +290,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 onBlur={() => {
                   if (!isSearching) setCompactSearchOpen(false);
                 }}
-                placeholder="Search"
-                aria-label="Search settings"
+                placeholder={settingsText("Search")}
+                aria-label={settingsText("Search settings")}
                 role="combobox"
                 aria-autocomplete="list"
                 aria-expanded={isSearching && hasResults}
@@ -304,7 +309,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                   size="icon-micro"
                   variant="ghost-muted"
                   className="shrink-0"
-                  aria-label="Clear settings search"
+                  aria-label={settingsText("Clear settings search")}
                   onClick={() => {
                     clearSearch();
                     searchInputRef.current?.focus();
@@ -321,14 +326,14 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 role="status"
                 className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
               >
-                No settings found
+                {settingsText("No settings found")}
               </p>
             ) : null}
             {isSearching ? (
               <SidebarMenu
                 id={hasResults ? "settings-search-results" : undefined}
                 role={hasResults ? "listbox" : undefined}
-                aria-label={hasResults ? "Settings search results" : undefined}
+                aria-label={settingsText(hasResults ? "Settings search results" : undefined)}
               >
                 {results.map((item, index) => (
                   <SidebarMenuItem
@@ -350,10 +355,10 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                       <SettingsSectionIcon to={item.to} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium text-sidebar-foreground">
-                          {item.title}
+                          {settingsText(item.title)}
                         </span>
                         <span className="block truncate text-2xs text-sidebar-muted-foreground/75">
-                          {SETTINGS_SECTION_LABELS[item.to]}
+                          {settingsText(SETTINGS_SECTION_LABELS[item.to])}
                         </span>
                       </span>
                     </SidebarMenuButton>
@@ -366,7 +371,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                   <SidebarMenu className="md:hidden">
                     <SidebarMenuItem>
                       <SidebarMenuButton
-                        aria-label="Search settings"
+                        aria-label={settingsText("Search settings")}
                         onClick={() => setCompactSearchOpen(true)}
                       >
                         <SearchIcon />
@@ -377,14 +382,14 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 <div
                   {...sectionNavigation.containerProps}
                   role="tree"
-                  aria-label="Settings sections"
+                  aria-label={settingsText("Settings sections")}
                   className="flex flex-col gap-4"
                 >
                   {SETTINGS_NAV_GROUPS.map((group, index) => (
                     <div
                       key={group.heading ?? index}
                       role="group"
-                      aria-label={group.heading ?? undefined}
+                      aria-label={settingsText(group.heading ?? undefined)}
                       className="flex flex-col gap-1 max-md:border-t max-md:border-sidebar-border max-md:pt-4 max-md:first:border-t-0 max-md:first:pt-0"
                     >
                       {group.heading ? (
@@ -396,7 +401,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                             !compactSearchOpen && "max-md:hidden",
                           )}
                         >
-                          {group.heading}
+                          {settingsText(group.heading)}
                         </h3>
                       ) : null}
                       <SidebarMenu role="presentation">
@@ -418,7 +423,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                                 <span
                                   className={cn("truncate", !compactSearchOpen && "max-md:sr-only")}
                                 >
-                                  {SETTINGS_SECTION_LABELS[to]}
+                                  {settingsText(SETTINGS_SECTION_LABELS[to])}
                                 </span>
                               </SidebarMenuButton>
                             </SidebarMenuItem>

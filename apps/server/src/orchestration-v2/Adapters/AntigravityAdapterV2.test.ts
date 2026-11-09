@@ -1,4 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+// @effect-diagnostics-next-line nodeBuiltinImport:off - Effect's symlink has no junction type; Windows directory links must work without elevation.
+import * as NodeFS from "node:fs";
 import { assert, describe, it } from "@effect/vitest";
 import {
   ChatFileAttachment,
@@ -357,15 +359,21 @@ describe("AntigravityAdapterV2 client file system", () => {
         context("fs/read_text_file"),
       ).pipe(Effect.exit);
       assert.isTrue(Exit.isFailure(outsideRead));
-      const linkPath = path.join(workspace, "linked-secret.txt");
-      yield* fileSystem.symlink(outsideFile, linkPath);
+      const outsideLink = path.join(workspace, "outside-link");
+      yield* Effect.sync(() =>
+        NodeFS.symlinkSync(path.dirname(outsideFile), outsideLink, "junction"),
+      );
+      const linkPath = path.join(outsideLink, path.basename(outsideFile));
       const linkedRead = yield* readTextFile(
         { sessionId: "mock-session-1", path: linkPath },
         context("fs/read_text_file"),
       ).pipe(Effect.exit);
       assert.isTrue(Exit.isFailure(linkedRead), "a read through an escaping symlink is denied");
-      const insideLink = path.join(workspace, "inside-link.ts");
-      yield* fileSystem.symlink(insidePath, insideLink);
+      const insideDirectoryLink = path.join(workspace, "inside-link");
+      yield* Effect.sync(() =>
+        NodeFS.symlinkSync(path.dirname(insidePath), insideDirectoryLink, "junction"),
+      );
+      const insideLink = path.join(insideDirectoryLink, path.basename(insidePath));
       const viaInsideLink = yield* readTextFile(
         { sessionId: "mock-session-1", path: insideLink },
         context("fs/read_text_file"),
@@ -529,7 +537,10 @@ describe("AntigravityAdapterV2 workspace changes", () => {
           },
         ],
       );
-      assert.include(JSON.stringify(sent.prompt), host.resolveAttachmentPath(document)!);
+      assert.include(
+        JSON.stringify(sent.prompt),
+        JSON.stringify(host.resolveAttachmentPath(document)!).slice(1, -1),
+      );
       if (readTextFile === undefined) {
         return yield* Effect.die("Antigravity sessions must serve client file requests");
       }

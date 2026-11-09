@@ -1,3 +1,4 @@
+import { useSettingsText } from "../settings/settingsText";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   type ProviderInstanceId,
@@ -95,6 +96,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   triggerAriaLabel?: string;
   onOpenChange?: (open: boolean) => void;
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
+  onPrepareProvider?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
   /** Shown after the model name inside the same trigger, such as the effort level. */
@@ -110,6 +112,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   effortColumn?: ReactNode;
   footer?: ReactNode;
 }) {
+  const settingsText = useSettingsText();
+
   const composerFloatingLayerProps = useComposerMenuProps();
   const [uncontrolledIsMenuOpen, setUncontrolledIsMenuOpen] = useState(false);
   const isMenuOpen = props.open ?? uncontrolledIsMenuOpen;
@@ -254,6 +258,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       modelOptionsByInstance={props.modelOptionsByInstance}
       terminalOpen={props.terminalOpen ?? false}
       onRequestClose={() => setIsMenuOpen(false)}
+      {...(!props.disabled && props.onPrepareProvider
+        ? { onPrepareProvider: props.onPrepareProvider }
+        : {})}
       {...(props.onOpenProviderSetup ? { onOpenProviderSetup: props.onOpenProviderSetup } : {})}
       getModelDisabledReason={(instanceId, model) =>
         props.disabled
@@ -284,12 +291,14 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         render={
           <ComposerControl
             ref={triggerRef}
-            aria-label={[
-              props.triggerAriaLabel ?? props.triggerLabel ?? allModelNames ?? triggerLabel,
-              props.triggerDetail,
-            ]
-              .filter(Boolean)
-              .join(", ")}
+            aria-label={settingsText(
+              [
+                props.triggerAriaLabel ?? props.triggerLabel ?? allModelNames ?? triggerLabel,
+                props.triggerDetail,
+              ]
+                .filter(Boolean)
+                .join(", "),
+            )}
             size={size}
             data-chat-provider-model-picker="true"
             data-composer-shortcut={props.triggerShortcuts}
@@ -376,7 +385,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           {props.triggerSuffix}
           {selectedModel?.isUnavailable && !selectedEntries && props.triggerLabel === undefined ? (
             <Badge variant="outline" size="sm">
-              Unavailable
+              {settingsText("Unavailable")}
             </Badge>
           ) : null}
         </span>

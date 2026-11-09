@@ -1,16 +1,29 @@
+import * as DateTime from "effect/DateTime";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import { WorkLogButton, WorkLogList, WorkLogRow } from "./WorkLog";
 import type { WorktreeSetupSnapshot } from "@t3tools/contracts";
 import { type ToolActivityIcon } from "@t3tools/contracts";
-import { liveThoughtLine } from "@t3tools/client-runtime/work-log/presentation";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
 import { observeResize } from "~/lib/observeResize";
 import { tickTextContent } from "~/lib/tickTextContent";
+import { deadlineStore } from "@t3tools/client-runtime/clock";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
-import { memo, use, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  memo,
+  use,
+  useLayoutEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
-import { workEntryDisplayIndicatesToolFailure } from "../../session-logic";
-import ChatMarkdown from "../ChatMarkdown";
+import {
+  summarizeToolGroup,
+  toolGroupSummaryKind,
+} from "@t3tools/client-runtime/work-log/presentation";
+import { workEntryDisplayIndicatesToolFailure, workLogEntryIsToolLike } from "../../session-logic";
 import { Minimize2Icon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
@@ -43,17 +56,11 @@ import {
 import {
   useThreadReadTarget,
   threadReadLabel,
-  ThreadReadLabel,
   ReasoningTraceContent,
   SimpleWorkEntryRow,
 } from "./TimelineWorkEntryRow";
-import {
-  THINKING_PREVIEW_PLUGINS,
-  THOUGHT_PREVIEW_PLUGINS,
-  toolGroupSummaryIconName,
-  workEntryIconName,
-} from "./TimelineWorkEntryRow.logic";
-import { formatWorkingTimerNow } from "./TimelineWorkGroupRows.logic";
+import { toolGroupSummaryIconName, workEntryIconName } from "./TimelineWorkEntryRow.logic";
+import { planningWaitLabel, formatWorkingTimerNow } from "./TimelineWorkGroupRows.logic";
 
 export const WorkGroupSection = memo(function WorkGroupSection({
   anchorKey,
@@ -279,6 +286,7 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
   const { isCompacting, isPreparingWorktree, backgroundWorktreeSetup } =
     use(TimelineRowActivityCtx);
   const compacting = row.compacting === true || isCompacting;
+  if (!isPreparingWorktree && !compacting && !backgroundWorktreeSetup) return null;
   const shimmer = isPreparingWorktree || compacting;
   const label = isPreparingWorktree ? (
     "Setting up worktree…"
@@ -358,123 +366,95 @@ function CompactingLabel({ createdAt }: { createdAt: string | null }) {
   );
 }
 
-export function ThinkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "thinking" }> }) {
-  const ctx = use(TimelineRowCtx);
-  const { isCompacting, isPreparingWorktree } = use(TimelineRowActivityCtx);
-  if (isPreparingWorktree || isCompacting) return <WorkLogRow label="" />;
-  // A failed group keeps this disclosure while an approval waits, but nothing is thinking then.
-  const live = ctx.pendingApprovals.size === 0;
-  const activity = (
-    <LiveActivityRow label="Thinking" iconName="brain" active={live} shimmer={live} />
-  );
-  const { groupId } = row;
-  if (groupId === undefined) return activity;
-  return (
-    <button
-      type="button"
-      className="group/live-work flex min-h-6 w-full max-w-full cursor-pointer items-center rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-      aria-expanded={row.expanded === true}
-      onClick={() => ctx.onToggleWorkGroup(groupId, row.id)}
-    >
-      {activity}
-    </button>
-  );
-}
-
 function LiveActivityRow({
   label,
+  activityKey,
   iconName,
   toolIcon,
   failed = false,
   active = false,
   shimmer = false,
+  onToggle,
+  expanded,
 }: {
   label: ReactNode;
+  activityKey?: string | undefined;
   iconName?: WorkEntryIconName;
   toolIcon?: ToolActivityIcon | undefined;
   failed?: boolean;
   active?: boolean;
   shimmer?: boolean;
+  onToggle?: (() => void) | undefined;
+  expanded?: boolean | undefined;
 }) {
   const animated = active && !failed;
-  const showShimmer = animated && shimmer;
   return (
-    <div
-      ref={animated ? observeVisibleAnimation : undefined}
-      className="relative min-h-6 w-fit max-w-full min-w-0 overflow-hidden rounded-md text-sm leading-relaxed"
-    >
+    <div className="relative min-h-6 w-full max-w-full min-w-0 overflow-hidden rounded-md text-sm leading-relaxed">
       <LiveActivityContent
         label={label}
+        activityKey={activityKey}
         iconName={iconName}
         toolIcon={toolIcon}
         failed={failed}
-        announceFailure={failed}
-        active={animated && !shimmer}
+        active={animated && shimmer}
+        onToggle={onToggle}
+        expanded={expanded}
       />
-      {showShimmer ? (
-        <ActivityShimmerOverlay>
-          <LiveActivityContent label={label} iconName={iconName} toolIcon={toolIcon} highlighted />
-        </ActivityShimmerOverlay>
-      ) : null}
     </div>
   );
 }
 
 function LiveActivityContent({
   label,
+  activityKey,
   iconName,
   toolIcon,
   failed = false,
-  announceFailure = false,
   active = false,
   highlighted = false,
+  onToggle,
+  expanded,
 }: {
   label: ReactNode;
+  activityKey?: string | undefined;
   iconName: WorkEntryIconName | undefined;
   toolIcon?: ToolActivityIcon | undefined;
   failed?: boolean;
-  announceFailure?: boolean;
   active?: boolean;
   highlighted?: boolean;
+  onToggle?: (() => void) | undefined;
+  expanded?: boolean | undefined;
 }) {
   const showTrailingFailureMark =
     failed && iconName !== undefined && !toolIconAcceptsTint(toolIcon);
 
   return (
     <WorkLogRow
-      icon={
-        iconName ? (
-          <span
-            className={cn(
-              "flex size-4 items-center justify-center",
-              failed
-                ? failedToolIconClassName
-                : highlighted
-                  ? "text-foreground"
-                  : "text-icon-muted",
-            )}
-            role={announceFailure ? "img" : undefined}
-            aria-label={announceFailure ? "Tool call failed" : undefined}
-          >
-            <ToolActivityIconView
-              icon={toolIcon}
-              fallbackName={iconName}
-              className="block size-4 shrink-0 stroke-2"
-              muted={!highlighted}
-            />
-          </span>
-        ) : null
+      activity
+      onClick={onToggle}
+      role={onToggle ? "button" : undefined}
+      tabIndex={onToggle ? 0 : undefined}
+      onKeyDown={
+        onToggle
+          ? (event) => {
+              if (
+                event.target === event.currentTarget &&
+                (event.key === "Enter" || event.key === " ")
+              ) {
+                event.preventDefault();
+                onToggle();
+              }
+            }
+          : undefined
       }
+      aria-expanded={onToggle ? expanded : undefined}
       label={
-        <span
-          className={cn(
-            "block truncate",
-            highlighted && "text-foreground",
-            active && "live-tool-shine",
-          )}
-        >
-          {label}
-        </span>
+        <ExecutionStatusLabel
+          label={label}
+          activityKey={activityKey}
+          highlighted={highlighted}
+          active={active}
+        />
       }
       trailing={
         showTrailingFailureMark ? (
@@ -485,124 +465,242 @@ function LiveActivityContent({
   );
 }
 
-export function LiveWorkEntryTimelineRow({
-  row,
+function ExecutionStatusLabel({
+  label,
+  activityKey,
+  highlighted,
+  active,
 }: {
-  row: Extract<TimelineRow, { kind: "work-live" }>;
+  label: ReactNode;
+  activityKey?: string | undefined;
+  highlighted: boolean;
+  active: boolean;
 }) {
-  const ctx = use(TimelineRowCtx);
-  const threadTarget = useThreadReadTarget(row.entry, ctx.activeThreadEnvironmentId);
-  const label = liveWorkEntryLabel(row.entry, ctx.workspaceRoot, row.active);
-  const threadLabel = threadReadLabel(label, threadTarget);
-
-  const item = row.entry.projectedItem?.item;
-  const pendingApproval =
-    item?.type === "approval_request" ? ctx.pendingApprovals.get(item.requestId) : undefined;
-  if (pendingApproval) return <TimelinePendingApprovalRow approval={pendingApproval} />;
-
-  const failed = workEntryDisplayIndicatesToolFailure(row.entry);
-  const thoughtLine = row.thought && !row.expanded ? liveThoughtLine(row.thought.detail ?? "") : "";
-  const thoughtIsStatus = thoughtLine !== "" && row.entry === row.thought;
-
+  const current = useRef<HTMLSpanElement>(null);
+  const labelText = useRef<HTMLSpanElement>(null);
+  const outgoing = useRef<HTMLSpanElement>(null);
+  const previous = useRef<string | undefined>(undefined);
+  const previousKey = useRef<string | undefined>(undefined);
+  const transitionKey = activityKey ?? label;
+  const readLabel = useEffectEvent(() =>
+    typeof label === "string" ? label : (labelText.current?.textContent ?? ""),
+  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- animates committed status text without delaying provider output
+  useLayoutEffect(() => {
+    const old = previous.current;
+    const next = readLabel();
+    previous.current = next;
+    const key = typeof transitionKey === "string" ? transitionKey : next;
+    const sameActivity = previousKey.current === key;
+    previousKey.current = key;
+    if (
+      sameActivity ||
+      !active ||
+      !next ||
+      !current.current ||
+      !outgoing.current ||
+      document.hidden ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      current.current.getBoundingClientRect().bottom <= 0 ||
+      current.current.getBoundingClientRect().top >= window.innerHeight
+    )
+      return;
+    const style = getComputedStyle(current.current);
+    const cssDuration = style.getPropertyValue("--agent-state-duration").trim();
+    const duration = Number.parseFloat(cssDuration) * (cssDuration.endsWith("ms") ? 1 : 1_000);
+    if (!duration) return;
+    outgoing.current.textContent = old ?? "";
+    const options = {
+      duration,
+      easing: style.getPropertyValue("--agent-motion-ease").trim() || "ease-out",
+    };
+    const leave =
+      old === undefined
+        ? null
+        : outgoing.current.animate(
+            [
+              { opacity: 1, transform: "translateY(0)" },
+              { opacity: 0, transform: "translateY(-100%)" },
+            ],
+            options,
+          );
+    const enter = current.current.animate(
+      [
+        { opacity: 0, transform: "translateY(100%)" },
+        { opacity: 1, transform: "translateY(0)" },
+      ],
+      options,
+    );
+    return () => {
+      leave?.cancel();
+      enter.cancel();
+    };
+  }, [transitionKey, active]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- retains the latest committed text for the next activity's outgoing DOM layer
+  useLayoutEffect(() => {
+    previous.current = typeof label === "string" ? label : (labelText.current?.textContent ?? "");
+  }, [label]);
   return (
-    <button
-      type="button"
-      className={cn(
-        "group/live-work flex w-full max-w-full cursor-pointer rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
-        thoughtLine ? "flex-col items-start" : "min-h-6 items-center",
-      )}
-      aria-label={
-        failed
-          ? `${thoughtLine ? `${thoughtLine} ` : ""}${threadLabel?.text ?? label}, tool call failed`
-          : undefined
-      }
-      aria-expanded={row.expanded}
-      onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
+    <span
+      ref={active ? observeVisibleAnimation : undefined}
+      className={cn("relative block overflow-hidden", highlighted && "text-foreground")}
     >
-      {thoughtLine ? (
-        <WorkLogRow
-          icon={
-            <span className="flex size-4 items-center justify-center text-icon-muted">
-              <ToolActivityIconView
-                icon={undefined}
-                fallbackName="brain"
-                className="block size-4 shrink-0 stroke-2"
-                muted
-              />
-            </span>
-          }
-          label={
-            <span className="line-clamp-4">
-              <ChatMarkdown
-                inline
-                text={thoughtLine}
-                cwd={ctx.markdownCwd}
-                parseRawHtml={false}
-                extraRemarkPlugins={THOUGHT_PREVIEW_PLUGINS}
-              />
-            </span>
-          }
-          wrapLabel
-        />
-      ) : null}
-      <LiveActivityRow
-        label={
-          thoughtIsStatus ? (
-            row.active ? (
-              "Thinking"
-            ) : (
-              "Thought"
-            )
-          ) : row.entry.itemType === "reasoning" ? (
-            <ChatMarkdown
-              inline
-              text={row.entry.detail ?? label}
-              cwd={ctx.markdownCwd}
-              parseRawHtml={false}
-              extraRemarkPlugins={row.active ? THINKING_PREVIEW_PLUGINS : THOUGHT_PREVIEW_PLUGINS}
-            />
-          ) : threadLabel ? (
-            <ThreadReadLabel
-              label={threadLabel}
-              environmentId={ctx.activeThreadEnvironmentId}
-              linked={false}
-            />
-          ) : (
-            label
-          )
-        }
-        iconName={workEntryIconName(row.entry)}
-        toolIcon={row.entry.toolIcon ?? row.entry.toolSource?.icon}
-        failed={failed}
-        active={row.active}
+      <span ref={current} className="relative block overflow-hidden">
+        <span ref={labelText} className="block truncate">
+          {label}
+        </span>
+        {active ? <ActivityShimmerOverlay>{label}</ActivityShimmerOverlay> : null}
+      </span>
+      <span
+        ref={outgoing}
+        aria-hidden
+        className="pointer-events-none absolute inset-0 block truncate opacity-0"
       />
-    </button>
+    </span>
   );
 }
 
-export function WorkGroupToggleTimelineRow({
+export function WorkGroupTimelineRow({
   row,
 }: {
-  row: Extract<TimelineRow, { kind: "work-toggle" }>;
+  row: Extract<TimelineRow, { kind: "work-live" | "work-toggle" | "thinking" | "live-status" }>;
 }) {
   const ctx = use(TimelineRowCtx);
+  const { isCompacting, isPreparingWorktree } = use(TimelineRowActivityCtx);
+  const entry = row.kind === "work-live" || row.kind === "live-status" ? row.entry : null;
+  const target = useThreadReadTarget(
+    entry ?? { id: row.id, createdAt: row.createdAt ?? "", label: "", tone: "info" },
+    ctx.activeThreadEnvironmentId,
+  );
+  const [expandedThoughtId, setExpandedThoughtId] = useState<string | null>(null);
+  const reasoning = entry?.itemType === "reasoning" ? entry : null;
+  const thoughtExpanded = reasoning !== null && expandedThoughtId === reasoning.id;
+  const item = entry?.projectedItem?.item;
+  const progressAt = entry?.projectedItem
+    ? DateTime.formatIso(entry.projectedItem.item.updatedAt)
+    : (entry?.createdAt ?? row.createdAt ?? "");
+  const waiting = row.kind !== "work-toggle" && entry?.toolLifecycleStatus !== "inProgress";
+  const deadline = deadlineStore(waiting ? Date.parse(progressAt) + 30_000 : null);
+  const slow = useSyncExternalStore(deadline.subscribe, deadline.getSnapshot);
+  const approval =
+    item?.type === "approval_request" ? ctx.pendingApprovals.get(item.requestId) : undefined;
+  if (approval) return <TimelinePendingApprovalRow approval={approval} />;
+  if (
+    (row.kind === "thinking" || row.kind === "live-status") &&
+    (isCompacting || isPreparingWorktree)
+  )
+    return <WorkLogRow label="" />;
+  const label = entry
+    ? liveWorkEntryLabel(entry, ctx.workspaceRoot, row.kind === "work-live" && row.active)
+    : "";
+  const summaryTools =
+    row.kind === "work-live"
+      ? row.groupedEntries.filter(
+          (entry) =>
+            workLogEntryIsToolLike(entry) &&
+            entry.itemType !== "reasoning" &&
+            entry.itemType !== "approval_request" &&
+            entry.itemType !== "user_input_request",
+        )
+      : [];
+  const liveSummary = summaryTools.length ? summarizeToolGroup(summaryTools, 3, "attempts") : null;
+  const summary =
+    row.kind === "work-toggle"
+      ? row.summary
+      : (liveSummary?.summary ??
+        (row.kind === "work-live" && row.expanded
+          ? summarizeToolGroup(row.groupedEntries, 3).summary
+          : null));
+  const failed = entry
+    ? workEntryDisplayIndicatesToolFailure(entry)
+    : row.kind === "work-toggle" && row.hasFailure;
+  const status =
+    entry?.toolLifecycleStatus === "inProgress"
+      ? entry.itemType === "reasoning"
+        ? label
+        : (threadReadLabel(label, target)?.text ?? label)
+      : planningWaitLabel(0, slow ? 30_000 : 0);
+  if (row.kind === "work-live" && row.separateStatus && !summary) return null;
   return (
-    <WorkGroupHeader
-      label={row.summary}
-      iconName={row.toolSurface ?? toolGroupSummaryIconName(row.summaryKind)}
-      toolIcon={row.toolIcon}
-      failed={row.hasFailure}
-      expanded={row.expanded}
-      createdAt={row.createdAt}
-      timestampFormat={ctx.timestampFormat}
-      onToggle={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
-    />
+    <div
+      className={
+        row.kind === "live-status" && row.hidden ? "hidden" : "flex min-w-0 flex-col gap-2"
+      }
+    >
+      {row.kind !== "thinking" &&
+      row.kind !== "live-status" &&
+      (row.kind !== "work-live" || !row.separateStatus || summary) ? (
+        <WorkGroupHeader
+          label={summary ?? status}
+          active={row.kind === "work-live" && !summary}
+          iconName={
+            row.kind === "work-live" && !summary
+              ? undefined
+              : liveSummary
+                ? toolGroupSummaryIconName(toolGroupSummaryKind(summaryTools))
+                : entry
+                  ? workEntryIconName(entry)
+                  : row.kind === "work-toggle"
+                    ? (row.toolSurface ?? toolGroupSummaryIconName(row.summaryKind))
+                    : "brain"
+          }
+          toolIcon={
+            liveSummary
+              ? undefined
+              : entry
+                ? (entry.toolIcon ?? entry.toolSource?.icon)
+                : row.kind === "work-toggle"
+                  ? row.toolIcon
+                  : undefined
+          }
+          failed={liveSummary?.hasFailure ?? failed}
+          expanded={row.expanded === true}
+          createdAt={row.createdAt ?? ""}
+          timestampFormat={ctx.timestampFormat}
+          onToggle={() => {
+            if (row.groupId) ctx.onToggleWorkGroup(row.groupId, row.id);
+          }}
+        />
+      ) : null}
+      {row.kind === "live-status" ||
+      (!row.expanded &&
+        (row.kind === "thinking" ||
+          (row.kind === "work-live" && !row.separateStatus && summary))) ? (
+        <LiveActivityRow
+          iconName={
+            entry?.toolLifecycleStatus === "inProgress" ? workEntryIconName(entry) : "brain"
+          }
+          label={status}
+          activityKey={
+            row.kind === "live-status"
+              ? `${row.activityKey}:${waiting ? (slow ? "slow" : "waiting") : "running"}`
+              : undefined
+          }
+          active={ctx.pendingApprovals.size === 0}
+          shimmer={ctx.pendingApprovals.size === 0}
+          failed={failed}
+          expanded={thoughtExpanded}
+          onToggle={
+            reasoning?.detail?.trim()
+              ? () => {
+                  ctx.onToggleWorkEntry(row.id, thoughtExpanded);
+                  setExpandedThoughtId(thoughtExpanded ? null : reasoning.id);
+                }
+              : undefined
+          }
+        />
+      ) : null}
+      {reasoning && thoughtExpanded && !row.expanded ? (
+        <ReasoningTraceContent entries={[reasoning]} />
+      ) : null}
+    </div>
   );
 }
 
 function WorkGroupHeader(props: {
-  label: string;
-  iconName: WorkEntryIconName;
+  label: ReactNode;
+  active?: boolean;
+  iconName: WorkEntryIconName | undefined;
   toolIcon?: ToolActivityIcon | undefined;
   failed?: boolean | undefined;
   expanded: boolean;
@@ -612,18 +710,37 @@ function WorkGroupHeader(props: {
 }) {
   return (
     <WorkLogButton
-      aria-label={props.failed ? `${props.label}, tool call failed` : props.label}
+      activity
+      aria-label={
+        typeof props.label === "string"
+          ? props.failed
+            ? `${props.label}, tool call failed`
+            : props.label
+          : undefined
+      }
       aria-expanded={props.expanded}
       onClick={props.onToggle}
       icon={
-        <ToolActivityIconView
-          icon={props.toolIcon}
-          fallbackName={props.iconName}
-          className="size-4 shrink-0 stroke-2 text-icon-muted"
-          muted
+        props.iconName ? (
+          <ToolActivityIconView
+            icon={props.toolIcon}
+            fallbackName={props.iconName}
+            className={cn(
+              "size-4 shrink-0 stroke-2",
+              props.failed ? failedToolIconClassName : "text-agent-activity",
+            )}
+            muted={!props.failed}
+          />
+        ) : null
+      }
+      label={
+        <ExecutionStatusLabel
+          label={props.label}
+          highlighted={false}
+          active={props.active === true}
         />
       }
-      label={<span className="block truncate">{props.label}</span>}
+
       trailing={
         <TimelineRowTimestamp createdAt={props.createdAt} timestampFormat={props.timestampFormat} />
       }

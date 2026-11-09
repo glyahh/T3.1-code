@@ -54,7 +54,7 @@ function DialogBackdrop({
   className,
   variant = "default",
   ...props
-}: DialogPrimitive.Backdrop.Props & { variant?: "default" | "media" }) {
+}: DialogPrimitive.Backdrop.Props & { variant?: "default" | "media" | "content-preview" }) {
   return (
     <DialogPrimitive.Backdrop
       forceRender
@@ -91,16 +91,16 @@ function DialogPopup({
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean;
   bottomStickOnMobile?: boolean;
-  variant?: "default" | "media";
+  variant?: "default" | "media" | "content-preview";
 }) {
   return (
     <DialogPortal>
       {/* Media opens from inside other overlays (a composer chip, a popover), so it sits above them. */}
-      <DialogBackdrop className={variant === "media" ? "z-[60]" : undefined} variant={variant} />
+      <DialogBackdrop className={variant !== "default" ? "z-[60]" : undefined} variant={variant} />
       <DialogViewport
         className={cn(
           bottomStickOnMobile && "max-sm:grid-rows-[1fr_auto] max-sm:p-0 max-sm:pt-12",
-          variant === "media" &&
+          variant !== "default" &&
             "z-[60] grid-rows-1 place-items-center px-4 pb-6 pt-[calc(var(--native-titlebar-height,0px)+1.5rem)] [-webkit-app-region:no-drag]",
         )}
       >
@@ -109,6 +109,8 @@ function DialogPopup({
             variant === "media" ? DIALOG_MEDIA_POPUP_CLASS : DIALOG_POPUP_CLASS,
             "row-start-2 text-popover-foreground",
             variant === "default" && "max-h-full max-w-lg",
+            variant === "content-preview" &&
+              "row-start-1 w-fit max-w-[92vw] max-h-[min(86dvh,calc(100dvh-var(--native-titlebar-height,0px)-3rem))] overflow-hidden",
             bottomStickOnMobile && DIALOG_MOBILE_SHEET_CLASS,
             className,
           )}

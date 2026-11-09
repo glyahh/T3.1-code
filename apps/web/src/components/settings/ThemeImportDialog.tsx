@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import { DownloadIcon, PlusIcon } from "lucide-react";
 import type { ChangeEvent, DragEvent, UIEvent } from "react";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
@@ -94,6 +95,8 @@ function ThemeJsonEditor({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const settingsText = useSettingsText();
+
   const highlightRef = useRef<HTMLPreElement>(null);
   const isPlainText = value.length > MAX_HIGHLIGHTED_JSON_LENGTH;
   const highlightedJson = isPlainText ? "" : highlightJson(value);
@@ -117,7 +120,7 @@ function ThemeJsonEditor({
         </pre>
       )}
       <textarea
-        aria-label="Theme JSON"
+        aria-label={settingsText("Theme JSON")}
         className={cn(
           "relative z-10 block min-h-44 w-full resize-y overflow-auto bg-transparent p-3 font-mono text-xs leading-5 caret-foreground outline-none placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground",
           isPlainText ? "text-foreground" : "text-transparent",
@@ -151,6 +154,8 @@ export function ThemeImportDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const settingsText = useSettingsText();
+
   // Each opening is a fresh session: its body remounts with clean state, and
   // closing aborts every read, search, and install the session started.
   const [session, setSession] = useState(() => ({
@@ -178,7 +183,7 @@ export function ThemeImportDialog({
     >
       <DialogPopup className="max-w-3xl overflow-hidden">
         <DialogHeader>
-          <DialogTitle>Add a theme</DialogTitle>
+          <DialogTitle>{settingsText("Add a theme")}</DialogTitle>
         </DialogHeader>
         <ThemeImportBody
           key={session.id}
@@ -201,6 +206,8 @@ function ThemeImportBody({
   session: AbortController;
   onClose: () => void;
 }) {
+  const settingsText = useSettingsText();
+
   const { signal } = session;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [json, setJson] = useState("");
@@ -433,7 +440,7 @@ function ThemeImportBody({
       <div className="flex items-center gap-3" aria-hidden>
         <div className="h-px flex-1 bg-border" />
         <span className="text-muted-foreground text-2xs uppercase tracking-wider">
-          or import a file
+          {settingsText("or import a file")}
         </span>
         <div className="h-px flex-1 bg-border" />
       </div>
@@ -467,14 +474,14 @@ function ThemeImportBody({
         const chooseButton = (label = "Choose files") => (
           <Button disabled={isReading} size="sm" variant="outline" onClick={openFilePicker}>
             <DownloadIcon />
-            {isReading ? "Reading…" : label}
+            {settingsText(isReading ? "Reading…" : label)}
           </Button>
         );
         const editorSection = () => (
           <div className="space-y-2">
             <div className="flex items-baseline justify-between gap-3">
               <label className="text-sm font-medium" htmlFor="theme-json-editor">
-                Theme JSON
+                {settingsText("Theme JSON")}
               </label>
             </div>
             <ThemeJsonEditor id="theme-json-editor" onChange={setJson} value={json} />
@@ -484,23 +491,23 @@ function ThemeImportBody({
           return (
             <div className="space-y-3">
               <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
-                <p className="text-sm font-medium">Already installed</p>
+                <p className="text-sm font-medium">{settingsText("Already installed")}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {conflicts.map((theme) => theme.label).join(", ")}
+                  {settingsText(conflicts.map((theme) => theme.label).join(", "))}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Button size="sm" onClick={() => resolveConflicts("update")}>
-                  Update existing
+                  {settingsText("Update existing")}
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => resolveConflicts("copy")}>
-                  Keep both
+                  {settingsText("Keep both")}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setConflicts(null)}>
-                  Back
+                  {settingsText("Back")}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => onClose()}>
-                  Cancel
+                  {settingsText("Cancel")}
                 </Button>
               </div>
             </div>
@@ -516,9 +523,9 @@ function ThemeImportBody({
               {...dropHandlers}
             >
               <div className="min-w-0">
-                <p className="text-sm font-medium">Theme file</p>
+                <p className="text-sm font-medium">{settingsText("Theme file")}</p>
                 <p className="truncate text-xs text-muted-foreground">
-                  {fileName ?? "Drop T3 Code or VS Code .json files"}
+                  {fileName ?? settingsText("Drop T3 Code or VS Code .json files")}
                 </p>
               </div>
               {chooseButton()}
@@ -527,11 +534,11 @@ function ThemeImportBody({
             {editorSection()}
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button variant="ghost" onClick={() => onClose()}>
-                Cancel
+                {settingsText("Cancel")}
               </Button>
               <Button disabled={!json.trim() || isReading} onClick={handleSubmit}>
                 <PlusIcon />
-                Add theme
+                {settingsText("Add theme")}
               </Button>
             </div>
           </div>

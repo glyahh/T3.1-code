@@ -3,7 +3,13 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import { DEFAULT_SERVER_SETTINGS, type ScopedProjectRef, type ThreadId } from "@t3tools/contracts";
+import {
+  CommandId,
+  DEFAULT_SERVER_SETTINGS,
+  type ScopedProjectRef,
+  type ThreadId,
+} from "@t3tools/contracts";
+import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { type AnyRouter, useRouter } from "@tanstack/react-router";
 import {
   composerDraftHasUserContent,
@@ -13,7 +19,8 @@ import {
   type DraftThreadState,
   useComposerDraftStore,
 } from "../composerDraftStore";
-import { newDraftId, newThreadId } from "../lib/utils";
+import { newDraftId, newThreadId, randomUUID } from "../lib/utils";
+import { orchestrationEnvironment } from "../state/orchestration";
 import { orderItemsByPreferredIds } from "../components/Sidebar.logic";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -85,6 +92,7 @@ export function createNewThreadHandler(router: AnyRouter) {
       replace?: boolean;
       /** Composer text for the draft, set before it shows. A draft with user text keeps it. */
       prompt?: string;
+      userInitiated?: boolean;
     },
   ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
     const projects = readProjects();
@@ -109,6 +117,52 @@ export function createNewThreadHandler(router: AnyRouter) {
       if (options?.prompt === undefined) return;
       if (composerDraftHasUserContent(getComposerDraft(draftId))) return;
       setPrompt(draftId, options.prompt);
+    };
+    const prepareOpenedDraft = (draftId: DraftId) => {
+      const route = getCurrentRouteTarget();
+      if (options?.userInitiated === false || route?.kind !== "draft" || route.draftId !== draftId)
+        return;
+      const session = getDraftSession(draftId);
+      const draft = getComposerDraft(draftId);
+      if (
+        !session ||
+        session.promotedTo != null ||
+        session.environmentId !== projectRef.environmentId ||
+        (session.envMode === "worktree" && session.worktreePath === null)
+      )
+        return;
+      const selection = draft?.activeProvider
+        ? draft.modelSelectionByProvider[draft.activeProvider]
+        : null;
+      const provider = environmentServerConfigs
+        .get(projectRef.environmentId)
+        ?.providers.find((entry) => entry.instanceId === selection?.instanceId);
+      if (
+        !selection ||
+        !provider?.enabled ||
+        (provider.driver !== "pi" && provider.driver !== "antigravity")
+      )
+        return;
+      void runAtomCommand(
+        appAtomRegistry,
+        orchestrationEnvironment.v2.prepareProvider,
+        {
+          environmentId: projectRef.environmentId,
+          input: {
+            type: "thread.provider.prepare",
+            commandId: CommandId.make(randomUUID()),
+            threadId: session.threadId,
+            modelSelection: selection,
+            draft: {
+              projectId: session.projectId,
+              worktreePath: session.worktreePath,
+              runtimeMode: session.runtimeMode,
+              interactionMode: session.interactionMode,
+            },
+          },
+        },
+        { reportFailure: false },
+      );
     };
     const requestingRouteHref = router.state.location.href;
     const routeChangedSinceRequest = () => router.state.location.href !== requestingRouteHref;
@@ -322,6 +376,7 @@ export function createNewThreadHandler(router: AnyRouter) {
           routeTargetAfterWrites?.kind === "draft" &&
           routeTargetAfterWrites.draftId === emptyStoredDraftThread.draftId
         ) {
+          prepareOpenedDraft(emptyStoredDraftThread.draftId);
           return opened;
         }
         await router.navigate({
@@ -329,6 +384,7 @@ export function createNewThreadHandler(router: AnyRouter) {
           params: { draftId: emptyStoredDraftThread.draftId },
           replace: options?.replace ?? false,
         });
+        prepareOpenedDraft(emptyStoredDraftThread.draftId);
         return opened;
       })();
     }
@@ -356,6 +412,7 @@ export function createNewThreadHandler(router: AnyRouter) {
         ...pickExplicitWorkspaceOptions(options),
       });
       seedPrompt(currentRouteTarget.draftId);
+      prepareOpenedDraft(currentRouteTarget.draftId);
       return Promise.resolve({
         draftId: currentRouteTarget.draftId,
         threadId: latestActiveDraftThread.threadId,
@@ -390,6 +447,7 @@ export function createNewThreadHandler(router: AnyRouter) {
           params: { draftId: racedDraft.draftId },
           replace: options?.replace ?? false,
         });
+        prepareOpenedDraft(racedDraft.draftId);
         return { draftId: racedDraft.draftId, threadId: racedDraft.threadId };
       }
       setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, draftId, {
@@ -418,6 +476,7 @@ export function createNewThreadHandler(router: AnyRouter) {
         params: { draftId },
         replace: options?.replace ?? false,
       });
+      prepareOpenedDraft(draftId);
       return { draftId, threadId };
     })();
   };

@@ -1,16 +1,10 @@
+import { ContentPreview } from "./ContentPreview";
+import { useRef } from "react";
 import { MISSING_FILE_ACCESS_MESSAGE } from "@t3tools/client-runtime/state/assets";
 import { mediaFileReference, mediaUrlReference } from "@t3tools/client-runtime/media-reference";
 import type { AssetResource, EnvironmentId, SOURCE_CONTROL_MEDIA_ASSET } from "@t3tools/contracts";
 import { TriangleAlertIcon } from "lucide-react";
-import {
-  createContext,
-  memo,
-  useState,
-  type ComponentProps,
-  type CSSProperties,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
-} from "react";
+import { createContext, memo, useState, type ComponentProps, type CSSProperties } from "react";
 
 import { useAssetUrlRefresh, useAssetUrlState } from "../../assets/assetUrls";
 import { cn } from "../../lib/utils";
@@ -71,30 +65,6 @@ const CHAT_MARKDOWN_WORKSPACE_IMAGE_CLASS_NAME = cn(
   CHAT_MARKDOWN_MEDIA_FRAME_CLASS_NAME,
 );
 export const MarkdownLinkContext = createContext(false);
-
-function expandableMarkdownImageProps(
-  onImageExpand: ((preview: ExpandedImagePreview) => void) | undefined,
-  alt: string,
-) {
-  if (!onImageExpand) return {};
-  const previewName = alt.trim() || "image";
-  const expand = (event: ReactMouseEvent | ReactKeyboardEvent) => {
-    if (event.currentTarget.closest("a")) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const item = markdownImageItems.get(event.currentTarget);
-    if (item) onImageExpand(markdownImageGallery(event.currentTarget, item));
-  };
-  return {
-    role: "button" as const,
-    tabIndex: 0,
-    "aria-label": `Preview ${previewName}`,
-    onClick: expand,
-    onKeyDown: (event: ReactKeyboardEvent) => {
-      if (event.key === "Enter" || event.key === " ") expand(event);
-    },
-  };
-}
 
 function ChatMarkdownMediaUnavailableLabel(props: {
   readonly alt: string;
@@ -167,6 +137,7 @@ export function ChatMarkdownImage(props: {
   readonly originalUrl?: string | undefined;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
+  const imageRef = useRef<HTMLImageElement | null>(null);
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const src = props.src ?? loadedSrc;
@@ -174,6 +145,7 @@ export function ChatMarkdownImage(props: {
   const settled = src !== null && !failed && (!props.standalone || loadedSrc !== null);
   // Cached images are complete before `onLoad` can fire.
   const markLoadedIfComplete = (image: HTMLImageElement | null) => {
+    imageRef.current = image;
     if (!image) return;
     if (image.complete && image.naturalWidth > 0) setLoadedSrc(image.currentSrc || image.src);
     markdownImageItems.set(image, {
@@ -197,24 +169,32 @@ export function ChatMarkdownImage(props: {
   if (settled) {
     return (
       <MediaActions source={props.actionsSource}>
-        <img
-          {...props.imageProps}
-          ref={markLoadedIfComplete}
-          src={src}
-          alt={props.alt}
-          data-markdown-copy={props.copyMarkdown}
-          decoding="async"
-          loading="lazy"
-          draggable={false}
-          className={cn(
-            CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME,
-            props.className,
-            props.onImageExpand && "cursor-zoom-in",
-          )}
-          style={props.style}
-          {...expandableMarkdownImageProps(props.onImageExpand, props.alt)}
-          {...imageEvents(src)}
-        />
+        <span className="inline-block max-w-full">
+          <ContentPreview
+            inline
+            enabled={Boolean(props.onImageExpand)}
+            onExpand={() => {
+              const image = imageRef.current;
+              const item = image && markdownImageItems.get(image);
+              if (image && item) props.onImageExpand?.(markdownImageGallery(image, item));
+            }}
+            disabled={!props.onImageExpand}
+          >
+            <img
+              {...props.imageProps}
+              ref={markLoadedIfComplete}
+              src={src}
+              alt={props.alt}
+              data-markdown-copy={props.copyMarkdown}
+              decoding="async"
+              loading="lazy"
+              draggable={false}
+              className={cn(CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME, props.className)}
+              style={props.style}
+              {...imageEvents(src)}
+            />
+          </ContentPreview>
+        </span>
       </MediaActions>
     );
   }

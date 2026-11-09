@@ -1,3 +1,4 @@
+import { ContentPreviewContext } from "./ContentPreview";
 import { memo, useRef, useState, type ReactNode, type KeyboardEvent } from "react";
 import { flushSync } from "react-dom";
 import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
@@ -161,10 +162,10 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
     >
       <DialogPopup
         {...composerFloatingLayerProps}
-        variant="media"
+        variant="content-preview"
         showCloseButton={false}
         bottomStickOnMobile={false}
-        className="row-start-1 h-full max-h-[92vh] w-[92vw] max-w-[92vw] items-center justify-center overflow-visible [--media-width:92vw] [--media-height:min(calc((100vh-var(--native-titlebar-height,0px))*0.86),calc(100vh-var(--native-titlebar-height,0px)-160px))] sm:[--media-width:calc(92vw-96px)]"
+        className="row-start-1 max-h-[86dvh] w-fit max-w-[92vw] items-center justify-center overflow-visible [--media-width:92vw] [--media-height:min(calc((100vh-var(--native-titlebar-height,0px))*0.86),calc(100vh-var(--native-titlebar-height,0px)-160px))] sm:[--media-width:calc(92vw-96px)]"
         onKeyDown={onKeyDown}
         initialFocus={closeButtonRef}
         finalFocus={() => returnFocusTarget}
@@ -196,70 +197,74 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
             <ChevronLeftIcon className="size-5" />
           </Button>
         )}
-        <MediaActions source={actionsSource}>
-          <div className="relative isolate z-10 flex max-h-full max-w-[var(--media-width)] flex-col items-center">
-            {item.type === "video" ? (
-              <ExpandedVideo key={index} item={item} />
-            ) : showingAccessibilityDetails ? (
-              accessibilityDetails ? (
-                <SnapShotAccessibilityData
-                  details={accessibilityDetails}
-                  className="h-[min(var(--media-height),40rem)] w-[min(var(--media-width),42rem)] transition-opacity duration-140 ease-out starting:opacity-0 rounded-lg border border-border/70 bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:transition-none"
+        <ContentPreviewContext value={true}>
+          <MediaActions source={actionsSource}>
+            <div className="relative isolate z-10 flex max-h-full max-w-[var(--media-width)] flex-col items-center">
+              {item.type === "video" ? (
+                <ExpandedVideo key={index} item={item} />
+              ) : showingAccessibilityDetails ? (
+                accessibilityDetails ? (
+                  <SnapShotAccessibilityData
+                    details={accessibilityDetails}
+                    className="h-[min(var(--media-height),40rem)] w-[min(var(--media-width),42rem)] transition-opacity duration-140 ease-out starting:opacity-0 rounded-lg border border-border/70 bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:transition-none"
+                  />
+                ) : null
+              ) : item.src === null || failedImageSrc === item.src ? (
+                <ExpandedMediaFailure>
+                  <p>
+                    {openOriginalLink
+                      ? "This image could not be loaded."
+                      : "Image unavailable. The file may have been moved or deleted."}
+                  </p>
+                  {openOriginalLink}
+                </ExpandedMediaFailure>
+              ) : (
+                <ZoomableImage
+                  ref={zoomableImageRef}
+                  key={`${index}:${item.src}`}
+                  src={item.src}
+                  name={item.name}
+                  mimeType={item.mimeType}
+                  onError={() => setFailedImageSrc(item.src)}
                 />
-              ) : null
-            ) : item.src === null || failedImageSrc === item.src ? (
-              <ExpandedMediaFailure>
-                <p>
-                  {openOriginalLink
-                    ? "This image could not be loaded."
-                    : "Image unavailable. The file may have been moved or deleted."}
-                </p>
-                {openOriginalLink}
-              </ExpandedMediaFailure>
-            ) : (
-              <ZoomableImage
-                ref={zoomableImageRef}
-                key={`${index}:${item.src}`}
-                src={item.src}
-                name={item.name}
-                mimeType={item.mimeType}
-                onError={() => setFailedImageSrc(item.src)}
-              />
-            )}
-            <div className="mt-2 flex max-w-[var(--media-width)] items-center justify-center gap-1.5 text-xs text-white/80 max-sm:px-10">
-              <span className="truncate" aria-live="polite" aria-atomic="true">
-                {item.name}
-                {preview.images.length > 1 ? ` (${index + 1}/${preview.images.length})` : ""}
-              </span>
-              {accessibilityDetails && item.source ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        aria-label={contentsLabel}
-                        aria-pressed={showingAccessibilityDetails}
-                        onClick={() =>
-                          setAccessibilityDetailsSrc(showingAccessibilityDetails ? null : item.src)
-                        }
-                        size="icon-micro"
-                        variant="overlay"
+              )}
+              <div className="mt-2 flex max-w-[var(--media-width)] items-center justify-center gap-1.5 text-xs text-muted-foreground max-sm:px-10">
+                <span className="truncate" aria-live="polite" aria-atomic="true">
+                  {item.name}
+                  {preview.images.length > 1 ? ` (${index + 1}/${preview.images.length})` : ""}
+                </span>
+                {accessibilityDetails && item.source ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          aria-label={contentsLabel}
+                          aria-pressed={showingAccessibilityDetails}
+                          onClick={() =>
+                            setAccessibilityDetailsSrc(
+                              showingAccessibilityDetails ? null : item.src,
+                            )
+                          }
+                          size="icon-micro"
+                          variant="overlay"
+                        />
+                      }
+                    >
+                      <MorphIcon
+                        className="size-3"
+                        aria-hidden="true"
+                        icon={showingAccessibilityDetails ? ImageGlyph : TextGlyph}
                       />
-                    }
-                  >
-                    <MorphIcon
-                      className="size-3"
-                      aria-hidden="true"
-                      icon={showingAccessibilityDetails ? ImageGlyph : TextGlyph}
-                    />
-                  </TooltipTrigger>
-                  <TooltipPopup side="top">{contentsLabel}</TooltipPopup>
-                </Tooltip>
-              ) : item.source ? (
-                <SnapShotContentsButton source={item.source} side="top" />
-              ) : null}
+                    </TooltipTrigger>
+                    <TooltipPopup side="top">{contentsLabel}</TooltipPopup>
+                  </Tooltip>
+                ) : item.source ? (
+                  <SnapShotContentsButton source={item.source} side="top" />
+                ) : null}
+              </div>
             </div>
-          </div>
-        </MediaActions>
+          </MediaActions>
+        </ContentPreviewContext>
         {preview.images.length > 1 && (
           <Button
             type="button"

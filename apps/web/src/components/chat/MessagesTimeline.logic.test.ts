@@ -1086,6 +1086,38 @@ describe("deriveMessagesTimelineRows", () => {
     );
     const failedRows = deriveMessagesTimelineRows({ ...input, timelineEntries: failedEntries });
     expect(failedRows.some((row) => row.id === "work-entry-after-text-0")).toBe(true);
+    for (const status of ["completed", "failed", "interrupted"] as const) {
+      expect(
+        timelineTurnFoldRunIdsByEntryId({
+          ...input,
+          timelineEntries: failedEntries,
+          latestRun: { ...input.latestRun, status },
+          collapsedLiveRunIds: new Set<RunId>(),
+        }).get("work-entry-after-text-0"),
+      ).toBe(runId);
+      const folded = deriveMessagesTimelineRows({
+        ...input,
+        timelineEntries: failedEntries,
+        latestRun: { ...input.latestRun, status },
+        collapsedLiveRunIds: new Set<RunId>(),
+      });
+      expect(folded.map((row) => row.id)).toEqual(["turn-fold:turn-1", "assistant-final-entry"]);
+      const reopened = deriveMessagesTimelineRows({
+        ...input,
+        timelineEntries: failedEntries,
+        latestRun: { ...input.latestRun, status },
+        collapsedLiveRunIds: new Set<RunId>(),
+        expandedRunIds: new Set([runId]),
+        expandedWorkGroupIds: new Set(["work-group:work-entry-after-text-0"]),
+      });
+      expect(
+        reopened.some(
+          (row) =>
+            row.kind === "work" &&
+            row.groupedEntries.some((entry) => entry.id === "work-after-text-0"),
+        ),
+      ).toBe(true);
+    }
 
     const pendingEntries = timelineEntries.map((entry) =>
       entry.kind === "work" && entry.id === "work-entry-after-text-0"

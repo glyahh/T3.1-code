@@ -43,6 +43,7 @@ export interface TurnItemSource {
 }
 
 export interface TimelineRowSharedState {
+  openedTextSequence?: number;
   pendingApprovals: ReadonlyMap<RuntimeRequestId, PendingApproval>;
   respondingRequestIds: ReadonlyArray<RuntimeRequestId>;
   canOperateThread: boolean;
@@ -84,7 +85,7 @@ export interface TimelineRowSharedState {
   onForkFromRun:
     | ((input: { readonly sourceThreadId: ThreadId; readonly runId: RunId }) => Promise<void>)
     | undefined;
-  onToggleTurnFold: (runId: RunId) => void;
+  onToggleTurnFold: (runId: RunId, active?: boolean) => void;
   onToggleAttemptFold: (attemptId: RunAttemptId) => void;
   onFileOpen: (attachment: ChatFileAttachment) => void;
   onFileDownload: (attachment: ChatFileAttachment) => void;

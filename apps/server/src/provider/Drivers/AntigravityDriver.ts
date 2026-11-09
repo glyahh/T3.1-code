@@ -1,3 +1,4 @@
+import { assertAntigravityResumeSafe } from "../acp/AntigravityResumeSafety.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import { AntigravitySettings, ProviderDriverKind, ProviderSetupError } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -17,7 +18,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { HttpClient } from "effect/http";
-import type { AcpError } from "effect-acp/errors";
+import { AcpTransportError, type AcpError } from "effect-acp/errors";
 
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import {
@@ -253,18 +254,66 @@ export const AntigravityDriver: ProviderDriver<
           runtimeTempDirectory,
         }),
       }).pipe(Effect.provideService(Crypto.Crypto, crypto));
+      const ownedSessions = new Set<string>();
+      const checkColdResume = Effect.fn("AntigravityDriver.checkColdResume")(function* (
+        sessionId: string,
+      ) {
+        if (ownedSessions.has(sessionId)) return;
+        if (!/^[0-9a-f-]{36}$/i.test(sessionId)) return;
+        const filename = path.join(
+          profileDirectory,
+          "antigravity-acp",
+          "conversations",
+          `${sessionId}.db`,
+        );
+        if (
+          yield* fileSystem.exists(filename).pipe(
+            Effect.mapError(
+              (cause) =>
+                new AcpTransportError({
+                  method: "session/resume",
+                  detail: "Could not inspect Antigravity history",
+                  cause,
+                }),
+            ),
+          )
+        )
+          yield* assertAntigravityResumeSafe(filename);
+      });
       return {
         ...runtime,
-        start: () =>
-          runtime
-            .start()
-            .pipe(
-              Effect.tapError((cause): Effect.Effect<void> =>
-                input.onAuthorizationUrl === undefined && isAntigravitySignInRequiredError(cause)
-                  ? provider.onAuthRequired
-                  : Effect.void,
-              ),
+        resumeSession: (sessionId, activation) =>
+          checkColdResume(sessionId).pipe(
+            Effect.andThen(runtime.resumeSession(sessionId, activation)),
+            Effect.tap(() =>
+              Effect.sync(() => {
+                ownedSessions.add(sessionId);
+              }),
             ),
+          ),
+        loadSession: (sessionId, activation) =>
+          checkColdResume(sessionId).pipe(
+            Effect.andThen(runtime.loadSession(sessionId, activation)),
+            Effect.tap(() =>
+              Effect.sync(() => {
+                ownedSessions.add(sessionId);
+              }),
+            ),
+          ),
+        start: () =>
+          (input.resumeSessionId ? checkColdResume(input.resumeSessionId) : Effect.void).pipe(
+            Effect.andThen(runtime.start()),
+            Effect.tap((started) =>
+              Effect.sync(() => {
+                ownedSessions.add(started.sessionId);
+              }),
+            ),
+            Effect.tapError((cause): Effect.Effect<void> =>
+              input.onAuthorizationUrl === undefined && isAntigravitySignInRequiredError(cause)
+                ? provider.onAuthRequired
+                : Effect.void,
+            ),
+          ),
       };
     });
 
@@ -530,6 +579,7 @@ export const AntigravityDriver: ProviderDriver<
       orchestrationAdapter,
       textGeneration,
       auth: authFlow.controller,
+      invalidateCaches: usage.clear,
       refreshModels,
     } satisfies ProviderInstance;
   }),

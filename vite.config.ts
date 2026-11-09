@@ -3,6 +3,7 @@ import { defineConfig } from "vite-plus";
 import * as NodeURL from "node:url";
 import { remoteCacheUrl } from "./infra/task-cache/src/remoteCache.ts";
 import { cachedTestTasks } from "./scripts/lib/cached-tests.ts";
+import { CheckTestSequencer } from "./scripts/lib/check-test-sequencer.ts";
 
 const TEST_EXCLUDE = [
   "**/.repos/**",
@@ -97,6 +98,9 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    ...(process.env.T3CODE_CHECK_CHANGED_WINDOWS === "1"
+      ? { sequence: { sequencer: CheckTestSequencer } }
+      : {}),
     // Fixture subprocesses must not inherit the outer task runner’s cache policy.
     env: { VP_REMOTE_CACHE: "off", VP_REMOTE_CACHE_URL: "" },
     exclude: TEST_EXCLUDE,

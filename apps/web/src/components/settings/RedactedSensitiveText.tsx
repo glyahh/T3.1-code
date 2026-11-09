@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import { useState } from "react";
 
 import { cn } from "../../lib/utils";
@@ -31,6 +32,8 @@ export function RedactedSensitiveText(props: {
   readonly hideTooltip: string;
   readonly className?: string;
 }) {
+  const settingsText = useSettingsText();
+
   const [revealed, setRevealed] = useState(false);
   const value = props.value?.trim();
   const redacted = value ? redactedPlaceholder(value) : "";
@@ -49,7 +52,7 @@ export function RedactedSensitiveText(props: {
               props.className,
             )}
             onClick={() => setRevealed((current) => !current)}
-            aria-label={props.ariaLabel}
+            aria-label={settingsText(props.ariaLabel)}
           >
             {revealed ? value : redacted}
           </button>

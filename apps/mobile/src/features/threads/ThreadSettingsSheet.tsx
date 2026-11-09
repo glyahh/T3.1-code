@@ -100,6 +100,9 @@ import { threadAllowsProviderSwitch } from "../../state/thread-provider-switchin
 import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { orchestrationEnvironment } from "../../state/orchestration";
+import { uuidv4 } from "../../lib/uuid";
+import { CommandId } from "@t3tools/contracts";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import { ScreenContent } from "../../components/ui/ScreenContent";
 import {
@@ -1503,6 +1506,9 @@ export function ExistingThreadSettingsRouteScreen({
   route,
 }: StaticScreenProps<ExistingThreadSettingsRouteParams>) {
   const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
+  const prepareProvider = useAtomCommand(orchestrationEnvironment.v2.prepareProvider, {
+    reportFailure: false,
+  });
   // Reads the same environmentId/threadId params as the Thread route beneath it.
   const { selectedThread, selectedThreadDetailRef, selectedEnvironmentRuntime } =
     useThreadSelection();
@@ -1540,8 +1546,25 @@ export function ExistingThreadSettingsRouteScreen({
         option.selection.instanceId === modelSelection.instanceId &&
         option.selection.model === modelSelection.model,
     ) ?? null;
-  const updateModelSelection = (selection: ModelSelection) =>
+  const updateModelSelection = (selection: ModelSelection) => {
     updateThreadDraftModelSelection(threadKey, selection, serverConfig?.providers ?? []);
+    const provider = serverConfig?.providers.find(
+      (entry) => entry.instanceId === selection.instanceId,
+    );
+    if (provider?.driver === "pi" || provider?.driver === "antigravity") {
+      void prepareProvider({
+        environmentId: selectedThread.environmentId,
+        input: {
+          type: "thread.provider.prepare",
+          commandId: CommandId.make(uuidv4()),
+          threadId: selectedThread.id,
+          modelSelection: selection,
+          runtimeMode: draftSettings.runtimeMode ?? selectedThread.runtimeMode,
+          interactionMode: draftSettings.interactionMode ?? selectedThread.interactionMode,
+        },
+      });
+    }
+  };
 
   return (
     <ThreadSettingsPickerScreen

@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import type { ServerProviderSkill } from "@t3tools/contracts";
 import { preloadPatchFile } from "@pierre/diffs/ssr";
 import { useAtomValue } from "@effect/atom-react";
@@ -28,6 +29,8 @@ const PROMPT_PREVIEW_TEXT =
 function noop() {}
 
 export function PromptFontPreview() {
+  const settingsText = useSettingsText();
+
   const editorRef = useRef<ComposerPromptEditorHandle>(null);
   const [prompt, setPrompt] = useState(PROMPT_PREVIEW_TEXT);
   const [cursor, setCursor] = useState(PROMPT_PREVIEW_TEXT.length);
@@ -38,14 +41,14 @@ export function PromptFontPreview() {
   return (
     <div className="mt-1 mb-2 rounded-lg border border-border bg-background px-3 py-2">
       <ComposerPromptEditor
-        ariaLabel="Prompt font preview"
+        ariaLabel={settingsText("Prompt font preview")}
         editorRef={editorRef}
         value={prompt}
         cursor={cursor}
         contextRecords={EMPTY_COMPOSER_CONTEXT_RECORDS}
         skills={PREVIEW_SKILLS}
         disabled={false}
-        placeholder={DEFAULT_COMPOSER_PLACEHOLDER}
+        placeholder={settingsText(DEFAULT_COMPOSER_PLACEHOLDER)}
         className="max-h-42"
         onChange={onChange}
         onPaste={noop}
@@ -153,6 +156,8 @@ function previewTerminalFont(family: string, size: number): { family?: string; s
 }
 
 export function TerminalFontPreview({ family, size }: { family: string; size: number }) {
+  const settingsText = useSettingsText();
+
   const mountRef = useRef<HTMLDivElement>(null);
   const [surface, setSurface] = useState<GhosttyTerminalSurface | null>(null);
   const [initialFont] = useState(() => previewTerminalFont(family, size));
@@ -240,7 +245,7 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
     <div
       ref={mountSurface}
       className="relative mt-1 mb-2 h-52 overflow-hidden rounded-lg border border-border"
-      aria-label="Terminal font preview"
+      aria-label={settingsText("Terminal font preview")}
     />
   );
 }

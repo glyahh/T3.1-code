@@ -30,7 +30,7 @@ const preview: ChatCanvasPreview = {
 };
 
 describe("chat canvas model", () => {
-  it("shows the details card inline only where the canvas fits it beside the chat", () => {
+  it("keeps details in a popover without reserving chat width", () => {
     const resolve = (width: number) =>
       resolveChatCanvasModel({
         measurements: measurements(width),
@@ -39,11 +39,11 @@ describe("chat canvas model", () => {
         preview: null,
         detailsCardInlineOpen: true,
       }).detailsCardMode;
-    expect(resolve(1400)).toBe("inline");
+    expect(resolve(1400)).toBe("popover");
     expect(resolve(900)).toBe("popover");
   });
 
-  it("moves the card into a popover when a preview below it leaves too little height", () => {
+  it("does not reserve canvas space for the details popover", () => {
     const resolve = (fullContentHeight: number) =>
       resolveChatCanvasModel({
         measurements: measurements(1100, 300),
@@ -53,7 +53,7 @@ describe("chat canvas model", () => {
         detailsCardInlineOpen: true,
       });
     const model = resolve(400);
-    expect(model.layout.overlapsDetailsCard).toBe(true);
+    expect(model.layout.overlapsDetailsCard).toBe(false);
     expect(model.detailsCardMode).toBe("popover");
   });
 
@@ -66,7 +66,7 @@ describe("chat canvas model", () => {
       detailsCardInlineOpen: true,
     });
     expect(model.layout.overlapsDetailsCard).toBe(false);
-    expect(model.detailsCardMode).toBe("inline");
+    expect(model.detailsCardMode).toBe("popover");
   });
 
   it("keeps state identity when a measurement repeats", () => {

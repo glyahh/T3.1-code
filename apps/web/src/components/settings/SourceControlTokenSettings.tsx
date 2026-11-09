@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { ExternalLinkIcon } from "lucide-react";
 import { useState } from "react";
@@ -26,6 +27,8 @@ export function SourceControlTokenSettings({
   readonly credentials: SourceControlHostCredentials;
   readonly onSaved: () => void;
 }) {
+  const settingsText = useSettingsText();
+
   const { tokens } = useEnvironmentSettings(environmentId, (settings) =>
     readHostCredentialSettings(settings, definition.kind),
   );
@@ -71,12 +74,20 @@ export function SourceControlTokenSettings({
       {/* Locked while saving: a successful save clears the draft, which would drop edits made mid-request. */}
       <fieldset disabled={saving} className="contents">
         <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
-          A token saved here is used before{" "}
-          <code className="rounded bg-muted px-1 py-px text-2xs">{credentials.tokenEnvVar}</code>{" "}
-          and the{" "}
-          <code className="rounded bg-muted px-1 py-px text-2xs">{credentials.cliName}</code> login,
-          so {definition.label} works without the {credentials.cliLabel}. Give it{" "}
-          {credentials.tokenAccess}.{" "}
+          {settingsText("A token saved here is used before")}
+          {settingsText(" ")}
+          <code className="rounded bg-muted px-1 py-px text-2xs">{credentials.tokenEnvVar}</code>
+          {settingsText(" ")}
+          {settingsText("and the")}
+          {settingsText(" ")}
+          <code className="rounded bg-muted px-1 py-px text-2xs">{credentials.cliName}</code>
+          {settingsText(" login, so ")}
+          {settingsText(definition.label)}
+          {settingsText(" works without the ")}
+          {settingsText(credentials.cliLabel)}
+          {settingsText(". Give it")}
+          {settingsText(" ")}
+          {credentials.tokenAccess}.{settingsText(" ")}
           {normalizedHost || defaultHost ? (
             <InlineButton
               render={
@@ -87,25 +98,29 @@ export function SourceControlTokenSettings({
                 />
               }
             >
-              Create a token
+              {settingsText("Create a token")}
               <ExternalLinkIcon aria-hidden className="size-3" />
             </InlineButton>
           ) : null}
         </p>
         <div className="grid gap-3 sm:grid-cols-[12rem_1fr]">
           <div className="grid gap-1.5">
-            <Label htmlFor={`${definition.kind}-token-host-${environmentId}`}>Host</Label>
+            <Label htmlFor={`${definition.kind}-token-host-${environmentId}`}>
+              {settingsText("Host")}
+            </Label>
             <Input
               id={`${definition.kind}-token-host-${environmentId}`}
               autoComplete="off"
               size="sm"
-              placeholder={defaultHost}
+              placeholder={settingsText(defaultHost)}
               value={host}
               onChange={(event) => setHost(event.target.value)}
             />
           </div>
           <div className="grid gap-1.5">
-            <Label htmlFor={`${definition.kind}-token-${environmentId}`}>Token</Label>
+            <Label htmlFor={`${definition.kind}-token-${environmentId}`}>
+              {settingsText("Token")}
+            </Label>
             <SecretInput
               id={`${definition.kind}-token-${environmentId}`}
               size="sm"
@@ -118,8 +133,12 @@ export function SourceControlTokenSettings({
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">
             {savedHosts.length === 0
-              ? `No token saved; the server uses ${credentials.tokenEnvVar} or the ${credentials.cliName} login.`
-              : `Saved for ${savedHosts.join(", ")}.`}
+              ? settingsText(
+                  "No token saved; the server uses {0} or the {1} login.",
+                  credentials.tokenEnvVar,
+                  credentials.cliName,
+                )
+              : settingsText("Saved for {0}.", savedHosts.join(", "))}
           </p>
           <div className="flex shrink-0 gap-2">
             {isSaved ? (
@@ -129,11 +148,11 @@ export function SourceControlTokenSettings({
                 disabled={saving}
                 onClick={() => void save(normalizedHost, "")}
               >
-                Remove
+                {settingsText("Remove")}
               </Button>
             ) : null}
             <Button type="submit" size="xs" disabled={!normalizedHost || !draft.trim() || saving}>
-              Save
+              {settingsText("Save")}
             </Button>
           </div>
         </div>

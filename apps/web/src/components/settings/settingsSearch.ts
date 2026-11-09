@@ -1,3 +1,4 @@
+import { originalSettingsText } from "./settingsText";
 import { HOSTED_APP_CHANNEL } from "~/branding";
 import { isElectron, isSecretsFeatureEnabled } from "~/env";
 import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
@@ -298,6 +299,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/appearance",
     searchTerms: ["appearance colors palette custom import"],
     targetId: "appearance",
+  },
+  {
+    id: "unified-sidebar-background",
+    title: "统一侧栏与会话背景",
+    to: "/settings/appearance",
+    searchTerms: ["统一 同色 侧栏 背景 sidebar background same color appearance"],
   },
   {
     // Prefixed because the slider control already owns the `appearance-contrast` id.
@@ -1348,6 +1355,7 @@ export function settingsForThisPlatform(
 export function searchSettings(
   query: string,
   items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS,
+  translate = originalSettingsText,
 ): ReadonlyArray<SettingsSearchItem> {
   const normalizedQuery = normalizeSearchText(query);
   if (normalizedQuery.length === 0) return [];
@@ -1360,6 +1368,8 @@ export function searchSettings(
         title,
         normalizeSearchText(SETTINGS_SECTION_LABELS[item.to]),
         ...(item.searchTerms ?? []).map(normalizeSearchText),
+        normalizeSearchText(translate(item.title)),
+        normalizeSearchText(translate(SETTINGS_SECTION_LABELS[item.to])),
       ];
       if (!queryTokens.every((token) => fields.some((field) => field.includes(token)))) return [];
 

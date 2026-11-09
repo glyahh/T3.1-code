@@ -1,3 +1,4 @@
+import { ContentPreview } from "./ContentPreview";
 import { InlineAudioPreview } from "../files/InlineAudioPreview";
 import { filePreviewKind } from "@t3tools/shared/filePreview";
 import { findRevealRef } from "./markdownFindContext";
@@ -698,11 +699,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             )}
           >
             {image.previewUrl ? (
-              <button
-                type="button"
-                className="block h-full w-full cursor-zoom-in"
-                aria-label={`Preview ${image.name}`}
-                onClick={() => {
+              <ContentPreview
+                fill
+                onExpand={() => {
                   const preview = buildExpandedImagePreview(regularImages, image.id);
                   if (!preview) return;
                   ctx.onImageExpand(preview);
@@ -725,7 +724,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                         : "size-full object-cover",
                   )}
                 />
-              </button>
+              </ContentPreview>
             ) : (
               <div
                 className={cn(

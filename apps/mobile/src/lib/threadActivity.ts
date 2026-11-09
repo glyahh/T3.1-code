@@ -18,6 +18,7 @@ import {
 } from "@t3tools/client-runtime/work-log/command-label";
 import {
   contextCompactionLabel,
+  preparingToolLabel,
   liveThoughtLine,
   toolItemForDisplay,
   workEntryDisplayIndicatesToolFailure,
@@ -131,6 +132,7 @@ export interface ThreadFeedMessage {
   readonly attachments: ReadonlyArray<ChatAttachment>;
   readonly runId: RunId | null;
   readonly streaming: boolean;
+  readonly phase?: "commentary" | "partial_answer" | "final_answer";
   readonly inputIntent?: OrchestrationV2UserMessageInputIntent;
   readonly createdBy?: OrchestrationV2Actor;
   readonly creationSource?: OrchestrationV2CreationSource;
@@ -152,6 +154,7 @@ export interface LocalThreadMessage {
   readonly context?: OrchestrationMessageContext | undefined;
   readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;
   readonly streaming: boolean;
+  readonly phase?: "commentary" | "partial_answer" | "final_answer";
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -232,6 +235,8 @@ type ThreadFeedEntryContent =
     }
   | {
       readonly type: "thinking";
+      readonly label?: string;
+      readonly activityKey?: string;
       readonly id: string;
       readonly createdAt: string;
       readonly runId: RunId | null;
@@ -253,9 +258,13 @@ function compactWorkEntryText(value: string): string {
 }
 
 export function workEntryRowLabel(entry: WorkLogPresentationEntry, expanded = false): string {
+  const preparing = preparingToolLabel(entry);
+  if (preparing) return preparing;
   if (entry.itemType === "fork") return entry.label;
   if (expanded && entry.itemType === "reasoning")
-    return entry.toolLifecycleStatus === "inProgress" ? "Thinking" : "Thought";
+    return entry.toolLifecycleStatus === "inProgress"
+      ? compactWorkEntryText(liveThoughtLine(entry.detail ?? "")) || "Thinking"
+      : "Thought";
   const presentation = resolveWorkEntryToolPresentation(entry);
   if (presentation) return presentation.displayName;
   if (entry.command?.trim()) return compactWorkEntryText(commandDisplayText(entry.command));
@@ -1355,6 +1364,7 @@ export function deriveThreadFeedPresentation(
   activeWorkStartedAt: string | null = null,
   runlessWorkActive = false,
   cache?: ThreadFeedCache,
+  stableActivitySlot = false,
 ): ThreadFeedEntry[] {
   const previous = cache?.presentation ?? null;
   const restart = presentationRestart(
@@ -1531,7 +1541,18 @@ export function deriveThreadFeedPresentation(
           row.activities[0]?.projectedItem.item.status === "running"),
     )
   ) {
-    result.push(thinkingRow(activeWorkStartedAt, activeRunId));
+    const latestProgress = sourceFeed.findLast((entry) =>
+      entry.type === "message"
+        ? entry.message.runId === activeRunId
+        : entry.type === "activity-group" && entry.runId === activeRunId,
+    );
+    const progressAt =
+      latestProgress?.type === "message"
+        ? latestProgress.message.updatedAt
+        : latestProgress?.type === "activity-group" && latestProgress.activities.at(-1)
+          ? DateTime.formatIso(latestProgress.activities.at(-1)!.projectedItem.item.updatedAt)
+          : activeWorkStartedAt;
+    result.push(thinkingRow(progressAt, activeRunId));
   }
   const checkpointByRunId = new Map<RunId, ThreadCheckpointSummary>();
   for (const entry of sourceFeed) {
@@ -1576,6 +1597,33 @@ export function deriveThreadFeedPresentation(
       continuedWorkLogRows.set(row, continued);
     }
     result[index] = continued;
+  }
+  if (stableActivitySlot && isWorking && latestRun?.turnEnded !== true) {
+    const live = result.findLast((row) => row.type === "work-toggle" && row.live);
+    const current = sourceFeed.findLast(
+      (row) => row.type === "activity-group" && row.runId === activeRunId,
+    );
+    const activity = current?.type === "activity-group" ? current.activities.at(-1) : undefined;
+    if (live?.type === "work-toggle" && activity) {
+      for (let i = result.length - 1; i >= 0; i--)
+        if (result[i]?.type === "thinking") result.splice(i, 1);
+      const index = result.indexOf(live);
+      result[index] = {
+        ...live,
+        shimmer: false,
+        summary: summarizeToolGroup(
+          current!.type === "activity-group" ? current!.activities.map((a) => a.workEntry) : [],
+        ).summary,
+      };
+      result.push({
+        type: "thinking",
+        id: `live-status:${activeRunId ?? "runless"}`,
+        runId: activeRunId,
+        createdAt: activity.createdAt,
+        ...(activity.lifecycleStatus === "inProgress" ? { label: live.summary } : {}),
+        activityKey: activity.id + activity.lifecycleStatus,
+      });
+    }
   }
   // A run that crosses a user message made the rows before it from entries
   // after it, so a later build cannot restart there even once those entries
@@ -1778,7 +1826,7 @@ function appendToolGroupRows(
   const summary = live
     ? (expanded || thought) && latestActivity.workEntry.itemType === "reasoning"
       ? latestActivity.lifecycleStatus === "inProgress"
-        ? "Thinking"
+        ? liveToolActivitySummary(latestActivity, live)
         : "Thought"
       : liveToolActivitySummary(latestActivity, live)
     : singleActivity !== null &&
@@ -1873,7 +1921,7 @@ function liveToolActivitySummary(activity: ThreadFeedActivity, presentTense: boo
   const status = liveActivityToolStatus(activity.lifecycleStatus, presentTense);
   if (activity.workEntry.itemType === "reasoning") {
     return (
-      activity.workEntry.detail?.trim().replace(/\s+/g, " ") ||
+      compactWorkEntryText(liveThoughtLine(activity.workEntry.detail ?? "")) ||
       (status === "inProgress" ? "Thinking" : "Thought")
     );
   }
@@ -2133,6 +2181,7 @@ export function buildThreadFeed(
           attachments: item.attachments ?? [],
           runId: item.runId,
           streaming: item.type === "assistant_message" && item.streaming,
+          ...(item.type === "assistant_message" && item.phase ? { phase: item.phase } : {}),
           ...(item.type === "user_message"
             ? {
                 inputIntent: item.inputIntent,
@@ -2186,6 +2235,7 @@ export function buildThreadFeed(
         attachments: message.attachments ?? [],
         runId: null,
         streaming: message.streaming,
+        ...(message.phase ? { phase: message.phase } : {}),
         visibility: "local",
         sourceThreadId: ThreadId.make("local-feedback"),
         createdAt: message.createdAt,

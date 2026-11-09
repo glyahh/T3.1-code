@@ -129,13 +129,36 @@ const normalizeServerSettings = (
     ),
   );
 
-export function redactServerSettingsForClient(settings: ServerSettings): ServerSettings {
+export function redactServerSettingsForClient(
+  settings: ServerSettings,
+  liveResponseStreaming: boolean | undefined,
+): ServerSettings;
+export function redactServerSettingsForClient(settings: ServerSettings): ServerSettings;
+export function redactServerSettingsForClient(
+  settings: ServerSettings,
+  liveResponseStreaming = false,
+): ServerSettings {
   const redacted = mapSettingsSecrets(settings, (secret) =>
     secret.sensitive
       ? { value: "", redacted: secret.redacted || secret.value.length > 0 }
       : { value: secret.value, redacted: false },
   );
-  return { ...redacted, secretProviders: withoutUnknownSecretProviderConfigs(redacted) };
+  return {
+    ...redacted,
+    secretProviders: withoutUnknownSecretProviderConfigs(redacted),
+    responseStreamingMode:
+      !liveResponseStreaming && redacted.responseStreamingMode === "live"
+        ? "paragraph"
+        : redacted.responseStreamingMode,
+    projectSettingsOverrides: Object.fromEntries(
+      Object.entries(redacted.projectSettingsOverrides).map(([id, value]) => [
+        id,
+        !liveResponseStreaming && value.responseStreamingMode === "live"
+          ? { ...value, responseStreamingMode: "paragraph" as const }
+          : value,
+      ]),
+    ),
+  };
 }
 
 // A newer kind's config may hold credentials this build cannot recognize, so it never leaves the server.
@@ -323,7 +346,7 @@ const ServerSettingsJson = fromLenientJson(
   Schema.Struct({
     ...ServerSettings.fields,
     responseStreamingMode: PersistedResponseStreamingMode.pipe(
-      Schema.withDecodingDefault(Effect.succeed("paragraph" as const)),
+      Schema.withDecodingDefault(Effect.succeed("live" as const)),
     ),
     projectSettingsOverrides: Schema.Record(
       ProjectId,

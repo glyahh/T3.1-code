@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./streaming-text": {
+      "types": "./src/streamingText.ts",
+      "default": "./src/streamingText.ts"
+    },
     "./assembly-highlighting": {
       "types": "./src/assemblyHighlighting.ts",
       "default": "./src/assemblyHighlighting.ts"

@@ -2097,7 +2097,7 @@ it.effect(
               ingestNormalized: (input) =>
                 Ref.update(ingested, (current) => [...current, input.event]).pipe(Effect.as([])),
             }),
-            ServerSettings.layerTest(),
+            ServerSettings.layerTest({ responseStreamingMode: "paragraph" }),
           ),
         ),
       );
@@ -2947,6 +2947,12 @@ it.effect.each([
       key,
       shouldFinalizeRun: () => Effect.succeed(true),
       hasPendingBackgroundWorkForThread: () => Effect.succeed(true),
+      ingestNormalized: ({ event }) =>
+        (event.type === "turn_item.updated" &&
+        event.turnItem.id === TurnItemId.make(`test-consumer-barrier:${key}`)
+          ? Deferred.succeed(consumerWaiting, undefined)
+          : Effect.void
+        ).pipe(Effect.as([])),
       events: (ids) =>
         Stream.concat(
           Stream.fromIterable([
@@ -2966,12 +2972,15 @@ it.effect.each([
                 ]
               : []),
             rootTerminalEvent(ids, "completed"),
-          ] satisfies ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event>),
-          Stream.fromEffect(
-            Deferred.succeed(consumerWaiting, undefined).pipe(
-              Effect.andThen(Deferred.await(release)),
+            backgroundTurnItemEvent(
+              ids,
+              "dynamic_tool",
+              "completed",
+              0,
+              TurnItemId.make(`test-consumer-barrier:${key}`),
             ),
-          ).pipe(Stream.drain),
+          ] satisfies ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event>),
+          Stream.fromEffect(Deferred.await(release)).pipe(Stream.drain),
         ),
       afterStart: (closed) =>
         Effect.gen(function* () {
@@ -3624,6 +3633,7 @@ function runBackgroundItemScenario(
 ) {
   return Effect.gen(function* () {
     const ids = backgroundScenarioIds(key);
+    const consumedItemId = TurnItemId.make(`test-consumer-barrier:${key}`);
     const providerInstanceId = ProviderInstanceId.make("codex");
     const observed = yield* Ref.make<ReadonlyArray<string>>([]);
     const ingestionDone = yield* Deferred.make<void>();
@@ -3658,6 +3668,11 @@ function runBackgroundItemScenario(
             ingestNormalized: (input) =>
               Effect.gen(function* () {
                 const event = input.event;
+                if (event.type === "turn_item.updated" && event.turnItem.id === consumedItemId) {
+                  yield* options?.onEventsConsumed ?? Effect.void;
+                  yield* options?.afterEvents?.(previewActivity) ?? Effect.void;
+                  return [];
+                }
                 if (event.type === "turn_item.updated") {
                   yield* Ref.update(observed, (current) => [
                     ...current,
@@ -3691,16 +3706,10 @@ function runBackgroundItemScenario(
             : { hasPendingBackgroundWorkForThread: options.hasPendingBackgroundWorkForThread }),
           subscribeEvents: Effect.gen(function* () {
             yield* options?.onSubscribe ?? Effect.void;
-            const events = Stream.fromIterable(makeEvents(ids)).pipe(
-              Stream.concat(
-                Stream.fromEffect(
-                  Effect.andThen(
-                    options?.onEventsConsumed ?? Effect.void,
-                    options?.afterEvents?.(previewActivity) ?? Effect.void,
-                  ),
-                ).pipe(Stream.drain),
-              ),
-            );
+            const events = Stream.fromIterable([
+              ...makeEvents(ids),
+              backgroundTurnItemEvent(ids, "dynamic_tool", "completed", 0, consumedItemId),
+            ]);
             return {
               events:
                 options?.keepEventStreamOpen === true

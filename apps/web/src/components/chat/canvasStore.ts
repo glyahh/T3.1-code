@@ -81,10 +81,7 @@ export type ChatCanvasStore = ReturnType<typeof createChatCanvasStore>;
 
 export function resolveChatCanvasModel({
   measurements,
-  detailsCardMeasurement,
-  threadRef,
   preview,
-  detailsCardInlineOpen,
 }: {
   measurements: ChatCanvasMeasurements;
   detailsCardMeasurement: DetailsCardMeasurement | null;
@@ -97,36 +94,12 @@ export function resolveChatCanvasModel({
   const { findBar } = measurements;
   const detailsCardTopInset = findBar?.bottom ?? 0;
   const lane = { padding: measurements.padding, minChatWidth: measurements.minChatWidth };
-  // The preview avoids where an open inline card would sit, whether or not a
-  // preview overlap has pushed the card itself into popover mode.
   const preferredDetailsCard = resolveThreadDetailsCardLayout({
     container,
     lane,
     frame: null,
     topInset: detailsCardTopInset,
   });
-  // The canvas outlives thread switches, so a measurement only counts for the
-  // thread whose card is shown now.
-  const detailsCardMeasured =
-    threadRef !== null &&
-    detailsCardMeasurement !== null &&
-    detailsCardMeasurement.threadRef.environmentId === threadRef.environmentId &&
-    detailsCardMeasurement.threadRef.threadId === threadRef.threadId
-      ? detailsCardMeasurement
-      : null;
-  const detailsCard =
-    detailsCardInlineOpen &&
-    preferredDetailsCard &&
-    detailsCardMeasured?.width === preferredDetailsCard.width &&
-    detailsCardMeasured.fullContentHeight > 0
-      ? {
-          left: preferredDetailsCard.x,
-          right: preferredDetailsCard.x + preferredDetailsCard.width,
-          bottom:
-            preferredDetailsCard.y +
-            Math.min(detailsCardMeasured.fullContentHeight, preferredDetailsCard.height),
-        }
-      : null;
   const layout = resolveChatCanvasLayout({
     container,
     preview,
@@ -134,17 +107,11 @@ export function resolveChatCanvasModel({
     maxChatWidth: measurements.maxChatWidth,
     minChatWidth: measurements.minChatWidth,
     composerHeight: measurements.composerHeight,
-    detailsCard,
+    detailsCard: null,
     findBar,
   });
-  const detailsCardPlacement = resolveThreadDetailsCardLayout({
-    container,
-    lane,
-    frame: layout.frame,
-    overlapsDetailsCard: layout.overlapsDetailsCard,
-    topInset: detailsCardTopInset,
-  });
-  const detailsCardMode: ThreadPanelPresentation = detailsCardPlacement ? "inline" : "popover";
+  const detailsCardPlacement = null;
+  const detailsCardMode: ThreadPanelPresentation = "popover";
   return {
     container,
     lane,

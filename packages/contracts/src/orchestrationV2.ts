@@ -453,6 +453,20 @@ export const OrchestrationV2AppThread = Schema.Struct({
   pullRequests: Schema.optional(Schema.Array(ThreadPullRequestLink)),
   branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
+  providerPreparation: Schema.optional(
+    Schema.Struct({
+      commandId: CommandId,
+      providerSessionId: ProviderSessionId,
+      providerThreadId: ProviderThreadId,
+      modelSelection: ModelSelection,
+      runtimeMode: RuntimeMode,
+      interactionMode: ProviderInteractionMode,
+      cwd: Schema.String,
+      configurationRevision: Schema.String,
+      ownsUnsentNativeThread: Schema.optional(Schema.Boolean),
+      nativeThreadId: Schema.optional(Schema.String),
+    }),
+  ),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
   linkOrigin: Schema.optional(OrchestrationV2LinkOrigin),
   delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
@@ -1033,6 +1047,7 @@ export const OrchestrationV2PendingBackgroundTask = kindUnionWithFallback(
 export type OrchestrationV2PendingBackgroundTask = typeof OrchestrationV2PendingBackgroundTask.Type;
 
 export const OrchestrationV2ProviderThreadNativeMetadata = Schema.Struct({
+  resumeRequiresRebuild: Schema.optional(Schema.Boolean),
   modelSelection: Schema.optional(ModelSelection),
   title: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   updatedAt: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
@@ -1300,6 +1315,7 @@ export const OrchestrationV2ConversationMessage = Schema.Struct({
   context: Schema.optional(OrchestrationMessageContext),
   attachments: Schema.Array(ChatAttachment),
   streaming: Schema.Boolean,
+  phase: Schema.optional(Schema.Literals(["commentary", "partial_answer", "final_answer"])),
   createdAt: Schema.DateTimeUtc,
   updatedAt: Schema.DateTimeUtc,
   delegatedCompletion: Schema.optional(
@@ -1605,6 +1621,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
     type: Schema.Literal("assistant_message"),
+    phase: Schema.optional(Schema.Literals(["commentary", "partial_answer", "final_answer"])),
     messageId: MessageId,
     text: Schema.String,
     textOmitted: DedupedBodyMarker,
@@ -2435,6 +2452,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
     type: Schema.Literal("assistant_message"),
+    phase: Schema.optional(Schema.Literals(["commentary", "partial_answer", "final_answer"])),
     messageId: MessageId,
     text: Schema.String,
     attachments: Schema.optional(Schema.Array(ChatAttachment)),
@@ -3110,6 +3128,22 @@ export const OrchestrationV2Command = Schema.Union([
     commandId: CommandId,
     threadId: ThreadId,
     modelSelection: ModelSelection,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("thread.provider.prepare"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    modelSelection: ModelSelection,
+    runtimeMode: Schema.optional(RuntimeMode),
+    interactionMode: Schema.optional(ProviderInteractionMode),
+    draft: Schema.optional(
+      Schema.Struct({
+        projectId: ProjectId,
+        worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+        runtimeMode: RuntimeMode,
+        interactionMode: ProviderInteractionMode,
+      }),
+    ),
   }),
   Schema.Struct({
     type: Schema.Literal("provider-session.detach"),

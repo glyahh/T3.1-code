@@ -1,3 +1,4 @@
+import { observeResize } from "~/lib/observeResize";
 import { type ReactNode } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
@@ -5,6 +6,8 @@ import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 
 export const MESSAGE_HEADING_LEVEL = 3;
+
+let ellipsisMeasurement: CanvasRenderingContext2D | null = null;
 
 export function MessageAuthorHeading({ children }: { children: string }) {
   return <h3 className="sr-only select-none">{children}</h3>;
@@ -48,7 +51,38 @@ export function ActivityShimmerOverlay({ children }: { children: ReactNode }) {
       className="live-activity-focus pointer-events-none absolute inset-y-0 select-none"
     >
       <span className="live-activity-focus-counter block">
-        <span className="live-activity-focus-aligned block text-foreground">{children}</span>
+        <span className="live-activity-focus-aligned block text-foreground">
+          <span
+            className="invisible absolute block w-max"
+            ref={(element) => {
+              if (!element) return;
+              const overlay = element.closest<HTMLElement>(".live-activity-focus");
+              const label = overlay?.parentElement;
+              const measure = () => {
+                const naturalWidth = Math.ceil(element.getBoundingClientRect().width);
+                const width = Math.min(naturalWidth, label?.clientWidth ?? Infinity);
+                let ellipsisWidth = 0;
+                if (naturalWidth > width) {
+                  ellipsisMeasurement ??= document.createElement("canvas").getContext("2d");
+                  if (ellipsisMeasurement) {
+                    ellipsisMeasurement.font = getComputedStyle(element).font;
+                    ellipsisWidth = ellipsisMeasurement.measureText("…").width;
+                  }
+                }
+                overlay?.style.setProperty("--agent-paint-width", `${width}px`);
+                overlay?.style.setProperty(
+                  "--agent-label-width",
+                  `${Math.max(0, width - ellipsisWidth)}px`,
+                );
+              };
+              measure();
+              return observeResize(label ? [element, label] : element, measure);
+            }}
+          >
+            {children}
+          </span>
+          <span className="block w-(--agent-paint-width) truncate">{children}</span>
+        </span>
       </span>
     </span>
   );

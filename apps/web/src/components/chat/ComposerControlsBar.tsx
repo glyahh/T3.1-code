@@ -1,3 +1,4 @@
+import { EffortWheelControl } from "./EffortWheelControl";
 import type { ChatComposerProps } from "./ChatComposer";
 import type { PromptUltrathink } from "./TraitsPicker";
 import type { ProviderInstanceEntry } from "../../providerInstances";
@@ -76,6 +77,7 @@ export function ComposerControlsBar(props: {
   onMultipleModelSelectionsChange: ChatComposerProps["onMultipleModelSelectionsChange"];
   selectedModelSelection: ModelSelection;
   onProviderModelSelect: ChatComposerProps["onProviderModelSelect"];
+  onPrepareProvider?: ChatComposerProps["onPrepareProvider"];
   activeThreadModelSelection: ChatComposerProps["activeThreadModelSelection"];
   selectedModelForPickerWithCustomFallback: string;
   lockedProvider: ChatComposerProps["lockedProvider"];
@@ -124,6 +126,7 @@ export function ComposerControlsBar(props: {
     onMultipleModelSelectionsChange,
     selectedModelSelection,
     onProviderModelSelect,
+    onPrepareProvider,
     activeThreadModelSelection,
     selectedModelForPickerWithCustomFallback,
     lockedProvider,
@@ -199,6 +202,7 @@ export function ComposerControlsBar(props: {
       onMultipleModelSelectionsChange={onMultipleModelSelectionsChange}
       selectedModelSelection={selectedModelSelection}
       onProviderModelSelect={onProviderModelSelect}
+      {...(onPrepareProvider ? { onPrepareProvider } : {})}
       activeInstanceId={
         providerCatalogPending
           ? (activeThreadModelSelection?.instanceId ?? selectedInstanceId)
@@ -266,7 +270,17 @@ export function ComposerControlsBar(props: {
     </ComposerControl>
   ) : (
     <>
-      {composerModelPicker}
+      {traitsInput ? (
+        <EffortWheelControl
+          traits={traitsInput}
+          disabled={providerCatalogPending || isSendBusy || modelPickerOpen}
+          scope={`${environmentId}:${routeThreadRef?.threadId ?? draftId}:${selectedInstanceId}:${selectedModel}`}
+        >
+          {composerModelPicker}
+        </EffortWheelControl>
+      ) : (
+        composerModelPicker
+      )}
 
       <>
         {restingBlockDefs.map((def, index) => {

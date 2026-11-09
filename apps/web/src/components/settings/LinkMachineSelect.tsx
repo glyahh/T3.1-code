@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import type { LinkableMachine } from "@t3tools/client-runtime/link-request";
 import { useId } from "react";
 
@@ -10,26 +11,30 @@ export const ANOTHER_ADDRESS = "another-address";
 
 /** Whether a machine is linked already, or how this app knows it when not connected to it. */
 export function LinkMachineBadge({ machine }: { readonly machine: LinkableMachine }) {
+  const settingsText = useSettingsText();
+
   if (machine.linked) {
     return (
       <Badge variant="success" size="sm">
-        Linked
+        {settingsText("Linked")}
       </Badge>
     );
   }
   if (machine.connected) return null;
   return (
     <Badge variant="outline" size="sm">
-      {machine.connectOnly ? "T3 Connect" : "Not connected"}
+      {machine.connectOnly ? settingsText("T3 Connect") : settingsText("Not connected")}
     </Badge>
   );
 }
 
 function MachineName({ machine }: { readonly machine: LinkableMachine }) {
+  const settingsText = useSettingsText();
+
   return (
     <span className="flex min-w-0 items-center gap-2">
       <EnvironmentMachineIcon kind={machine.machine} className="size-4 shrink-0 opacity-80" />
-      <span className="min-w-0 truncate">{machine.label}</span>
+      <span className="min-w-0 truncate">{settingsText(machine.label)}</span>
     </span>
   );
 }
@@ -46,11 +51,13 @@ export function LinkMachineSelect({
   readonly onChange: (value: string) => void;
   readonly disabled: boolean;
 }) {
+  const settingsText = useSettingsText();
+
   const labelId = useId();
   return (
     <div className="space-y-1.5">
       <span id={labelId} className="block text-xs font-medium text-foreground">
-        Machine
+        {settingsText("Machine")}
       </span>
       <Select
         value={value}
@@ -78,7 +85,7 @@ export function LinkMachineSelect({
             </SelectItem>
           ))}
           <SelectItem value={ANOTHER_ADDRESS} hideIndicator>
-            Another address…
+            {settingsText("Another address…")}
           </SelectItem>
         </SelectPopup>
       </Select>

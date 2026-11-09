@@ -366,6 +366,22 @@ describe("Antigravity stdout compatibility", () => {
 });
 
 describe("Antigravity stderr compatibility", () => {
+  it.effect("retains only classified proxy diagnostics across fragmented stderr", () =>
+    Effect.gen(function* () {
+      const diagnostics: unknown[] = [];
+      const handle = makeAntigravityStderrHandler({
+        onDiagnostic: (diagnostic) => Effect.sync(() => void diagnostics.push(diagnostic)),
+      });
+      yield* handle("token=secret generic HTTP 502\nProxy failed to con");
+      yield* handle("nect to CCPA API: private response\nProxy unexpected connection error\n");
+      expect(diagnostics).toEqual([
+        { source: "local_proxy", category: "backend_connection_failed" },
+        { source: "local_proxy", category: "proxy_internal_error" },
+      ]);
+      expect(JSON.stringify(diagnostics)).not.toContain("secret");
+      expect(JSON.stringify(diagnostics)).not.toContain("private");
+    }),
+  );
   it.effect("forwards fragmented native sign-in URLs from runtime 1.1.1", () =>
     Effect.gen(function* () {
       const urls: string[] = [];

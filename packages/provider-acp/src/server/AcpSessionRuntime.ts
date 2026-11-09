@@ -71,6 +71,7 @@ export interface AcpSessionEventStreamBarrier {
 
 export type AcpSessionRuntimeEvent =
   | AcpParsedSessionEvent
+  | { readonly _tag: "RuntimeDiagnostic"; readonly title: string }
   | AcpSessionEventStreamBarrier
   | {
       readonly _tag: "ConnectionTerminated";
@@ -129,7 +130,10 @@ export interface AcpSessionRuntimeOptions {
     notification: EffectAcpSchema.SessionNotification,
   ) => EffectAcpSchema.SessionNotification;
   /** Redact secrets before logging. Failure closes the runtime. */
-  readonly onStderr?: (text: string) => Effect.Effect<void, EffectAcpErrors.AcpError>;
+  readonly onStderr?: (
+    text: string,
+    report: (title: string) => Effect.Effect<void>,
+  ) => Effect.Effect<void, EffectAcpErrors.AcpError>;
   /** Disable only for non-interactive discovery that must surface auth-required immediately. */
   readonly authenticateOnAuthRequired?: boolean;
   readonly onInitialized?: (
@@ -1271,6 +1275,9 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
   const promptDispatchSemaphore = yield* Semaphore.make(1);
   const activePromptRef = yield* Ref.make<Option.Option<AcpActivePrompt>>(Option.none());
   const assistantUpdatesOpenRef = yield* Ref.make(true);
+  let promptSequence = 0;
+  let observedPromptUpdate = false;
+  let observedPromptText = false;
   const sessionLoadGateRef = yield* Ref.make<Option.Option<SessionLoadGate>>(Option.none());
 
   const ensureConnected = Effect.gen(function* () {
@@ -1360,6 +1367,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
           ),
         ),
       ),
+      Effect.withSpan("AcpSessionRuntime.request", { attributes: { "acp.method": method } }),
     );
 
   const spawnCommand =
@@ -1446,8 +1454,12 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
         extendEnv: options.spawn.extendEnv ?? true,
         ...(options.ownDetachedProcessGroup === undefined
           ? {}
-          : { detached: options.ownDetachedProcessGroup }),
+          : // Windows cmd wrappers lose stdin when detached; taskkill still owns their tree.
+            {
+              detached: options.ownDetachedProcessGroup && options.processGroupPlatform !== "win32",
+            }),
         shell: containedSpawnCommand.shell,
+        windowsHide: true,
       }),
     )
     .pipe(
@@ -1631,7 +1643,11 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
     Stream.runForEach((chunk) =>
       Ref.update(stderrTailRef, (current) => appendAcpStderrTail(current, chunk)).pipe(
         Effect.andThen(
-          options.onStderr ? options.onStderr(chunk.slice(-maxStderrChunkLength)) : Effect.void,
+          options.onStderr
+            ? options.onStderr(chunk.slice(-maxStderrChunkLength), (title) =>
+                Queue.offer(eventQueue, { _tag: "RuntimeDiagnostic", title }).pipe(Effect.asVoid),
+              )
+            : Effect.void,
         ),
         Effect.catch((error) =>
           Effect.gen(function* () {
@@ -1759,6 +1775,39 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
             notification.update.sessionUpdate === "agent_thought_chunk")
         ) {
           return;
+        }
+        if (Option.isSome(yield* Ref.get(activePromptRef))) {
+          if (!observedPromptUpdate) {
+            observedPromptUpdate = true;
+            yield* Effect.logInfo("acp.latency.first_update", {
+              sessionId: notification.sessionId,
+              promptSequence,
+            }).pipe(
+              Effect.withSpan("acp.latency.first_update", {
+                attributes: {
+                  sessionId: notification.sessionId,
+                  promptSequence,
+                  updateType: notification.update.sessionUpdate,
+                },
+              }),
+            );
+          }
+          if (
+            !observedPromptText &&
+            notification.update.sessionUpdate === "agent_message_chunk" &&
+            notification.update.content.type === "text" &&
+            notification.update.content.text.length > 0
+          ) {
+            observedPromptText = true;
+            yield* Effect.logInfo("acp.latency.first_assistant_chunk", {
+              sessionId: notification.sessionId,
+              promptSequence,
+            }).pipe(
+              Effect.withSpan("acp.latency.first_assistant_text", {
+                attributes: { sessionId: notification.sessionId, promptSequence },
+              }),
+            );
+          }
         }
         yield* processSessionUpdate(notification);
       }),
@@ -2312,7 +2361,17 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
     error: EffectAcpErrors.AcpError,
   ) {
     yield* recordTermination(error);
-    yield* child.kill({ forceKillAfter: "1 second" }).pipe(Effect.ignore);
+    if (options.ownDetachedProcessGroup === true)
+      yield* terminateProcessGroup.pipe(
+        Effect.mapError(
+          (cause) =>
+            new EffectAcpErrors.AcpTransportError({
+              detail: "Failed to terminate owned ACP process group",
+              cause,
+            }),
+        ),
+      );
+    else yield* child.kill({ forceKillAfter: "1 second" }).pipe(Effect.ignore);
   });
 
   const cancel = Effect.gen(function* () {
@@ -2561,6 +2620,13 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
                 sessionId: started.sessionId,
                 ...payload,
               } satisfies EffectAcpSchema.PromptRequest;
+              promptSequence += 1;
+              observedPromptUpdate = false;
+              observedPromptText = false;
+              yield* Effect.logInfo("acp.latency.prompt_dispatched", {
+                sessionId: started.sessionId,
+                promptSequence,
+              });
               const completed = yield* Deferred.make<void>();
               const fiber = yield* runLoggedRequest(
                 "session/prompt",

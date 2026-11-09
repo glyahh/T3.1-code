@@ -188,6 +188,7 @@ export function makeAntigravityAcpAdapterFlavor(
   return {
     driver: ANTIGRAVITY_PROVIDER,
     runtimeHarness: "Antigravity",
+    rebuildAfterUnconfirmedTermination: true,
     capabilities: AntigravityProviderCapabilitiesV2,
     makeRuntime,
     buildPrompt: ({ text, attachments, promptCapabilities }) =>

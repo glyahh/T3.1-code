@@ -1,4 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+// @effect-diagnostics-next-line nodeBuiltinImport:off - Effect's symlink has no junction type; Windows directory links must work without elevation.
+import * as NodeFS from "node:fs";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -91,7 +93,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
       const managedInstall = path.join(configDir, "plugins", "managed");
       yield* fs.makeDirectory(path.join(workspace, ".git"), { recursive: true });
       yield* fs.makeDirectory(nestedWorkspace, { recursive: true });
-      yield* fs.symlink(workspace, aliasedWorkspace);
+      yield* Effect.sync(() => NodeFS.symlinkSync(workspace, aliasedWorkspace, "junction"));
       for (const install of [userInstall, projectInstall, localInstall, managedInstall]) {
         yield* writeSkill(path.join(install, "skills"), "review", "# Review");
       }
@@ -201,7 +203,7 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
         localSettings,
       );
       const linkedWorktree = path.join(tempDir, "linked-worktree");
-      yield* fs.symlink(worktree, linkedWorktree);
+      yield* Effect.sync(() => NodeFS.symlinkSync(worktree, linkedWorktree, "junction"));
       assert.deepEqual(
         yield* discoverClaudeSkills({ homePath: configDir }, linkedWorktree),
         localSettings,
@@ -274,7 +276,9 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
       yield* writeSkill(path.join(plugin, "skills"), "plain", "# Plain");
       yield* writeSkill(plugin, "custom", "---\nname: custom.review\n---\n");
       yield* writeSkill(outside, "escaped", "# Outside");
-      yield* fs.symlink(outside, path.join(plugin, "escape"));
+      yield* Effect.sync(() =>
+        NodeFS.symlinkSync(outside, path.join(plugin, "escape"), "junction"),
+      );
       yield* fs.makeDirectory(path.join(plugin, ".claude-plugin"));
       yield* fs.writeFileString(
         path.join(plugin, ".claude-plugin", "plugin.json"),

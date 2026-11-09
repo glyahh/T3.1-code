@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>騎自行車的鵜鶘 - Pelican Riding a Bicycle</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: radial-gradient(circle at 50% 30%, #a0e9fd 0%, #d4f7ff 60%, #eefcff 100%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        overflow: hidden;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      }
+
+      .title {
+        margin-bottom: 12px;
+        color: #1e3a8a;
+        font-size: 26px;
+        font-weight: 800;
+        letter-spacing: 2px;
+        text-shadow: 0 2px 8px rgba(30, 58, 138, 0.15);
+      }
+
+      .canvas-container {
+        position: relative;
+        width: 900px;
+        height: 520px;
+        box-shadow:
+          0 20px 45px -10px rgba(14, 116, 144, 0.25),
+          0 0 0 1px rgba(255, 255, 255, 0.8) inset;
+        border-radius: 28px;
+        overflow: hidden;
+        background: linear-gradient(
+          180deg,
+          #7ad5f9 0%,
+          #b8f0ff 65%,
+          #c8f5d0 65%,
+          #86efac 75%,
+          #4ade80 100%
+        );
+      }
+
+      svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+
+      /* === 動畫關鍵幀 === */
+      /* 背景雲朵飄動 */
+      @keyframes cloudMove {
+        0% {
+          transform: translateX(0);
+        }
+        100% {
+          transform: translateX(-1000px);
+        }
+      }
+      .clouds-1 {
+        animation: cloudMove 24s linear infinite;
+      }
+      .clouds-2 {
+        animation: cloudMove 38s linear infinite;
+      }
+
+      /* 地面灌木倒退 */
+      @keyframes groundMove {
+        0% {
+          transform: translateX(0);
+        }
+        100% {
+          transform: translateX(-600px);
+        }
+      }
+      .ground-bushes {
+        animation: groundMove 2.4s linear infinite;
+      }
+
+      /* 路面標線倒退 */
+      @keyframes roadDashes {
+        0% {
+          stroke-dashoffset: 0;
+        }
+        100% {
+          stroke-dashoffset: -120;
+        }
+      }
+      .road-line {
+        stroke-dasharray: 40 20;
+        animation: roadDashes 0.6s linear infinite;
+      }
+
+      /* 輪子轉動 (順時針高速旋轉) */
+      @keyframes spinWheel {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+      .wheel-rear {
+        transform-origin: 310px 380px;
+        animation: spinWheel 0.8s linear infinite;
+      }
+      .wheel-front {
+        transform-origin: 590px 380px;
+        animation: spinWheel 0.8s linear infinite;
+      }
+
+      /* 踏板齒盤旋轉 */
+      @keyframes spinCrank {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+      .crank-assembly {
+        transform-origin: 430px 380px;
+        animation: spinCrank 0.8s linear infinite;
+      }
+
+      /* 踏板需反向旋轉以保持水平 */
+      @keyframes counterRotate {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(-360deg);
+        }
+      }
+      .pedal-left {
+        transform-origin: 430px 418px;
+        animation: counterRotate 0.8s linear infinite;
+      }
+      .pedal-right {
+        transform-origin: 430px 342px;
+        animation: counterRotate 0.8s linear infinite;
+      }
+
+      /* 鵜鶘整個身體輕微上下起伏晃動 (騎行時的發力感) */
+      @keyframes pelicanBob {
+        0%,
+        100% {
+          transform: translateY(0px) rotate(0deg);
+        }
+        25% {
+          transform: translateY(-4px) rotate(1deg);
+        }
+        50% {
+          transform: translateY(2px) rotate(-0.5deg);
+        }
+        75% {
+          transform: translateY(-3px) rotate(0.5deg);
+        }
+      }
+      .pelican-rider {
+        transform-origin: 420px 280px;
+        animation: pelicanBob 0.8s ease-in-out infinite;
+      }
+
+      /* 鵜鶘大喉囊微動彈性 */
+      @keyframes pouchJiggle {
+        0%,
+        100% {
+          transform: scale(1) rotate(0deg);
+        }
+        50% {
+          transform: scale(1.04, 1.02) rotate(-2deg);
+        }
+      }
+      .pouch {
+        transform-origin: 520px 180px;
+        animation: pouchJiggle 0.8s ease-in-out infinite;
+      }
+
+      /* 鵜鶘翅膀握車把的自然微顫 */
+      @keyframes wingGrip {
+        0%,
+        100% {
+          transform: rotate(0deg);
+        }
+        50% {
+          transform: rotate(-2deg);
+        }
+      }
+      .wing-arm {
+        transform-origin: 415px 225px;
+        animation: wingGrip 0.8s ease-in-out infinite;
+      }
+
+      /* 鵜鶘腿部踩踏動畫 (右腿/近側) */
+      @keyframes legMotionRight {
+        0% {
+          transform: translateY(0) rotate(0deg);
+        }
+        25% {
+          transform: translateY(6px) rotate(-6deg);
+        }
+        50% {
+          transform: translateY(12px) rotate(2deg);
+        }
+        75% {
+          transform: translateY(3px) rotate(8deg);
+        }
+        100% {
+          transform: translateY(0) rotate(0deg);
+        }
+      }
+      .pelican-leg-right {
+        transform-origin: 410px 290px;
+        animation: legMotionRight 0.8s linear infinite;
+      }
+
+      /* 左腿 (遠側，相位相反) */
+      @keyframes legMotionLeft {
+        0% {
+          transform: translateY(12px) rotate(2deg);
+        }
+        25% {
+          transform: translateY(3px) rotate(8deg);
+        }
+        50% {
+          transform: translateY(0) rotate(0deg);
+        }
+        75% {
+          transform: translateY(6px) rotate(-6deg);
+        }
+        100% {
+          transform: translateY(12px) rotate(2deg);
+        }
+      }
+      .pelican-leg-left {
+        transform-origin: 410px 290px;
+        animation: legMotionLeft 0.8s linear infinite;
+      }
+
+      /* 眼睛偶爾眨動 */
+      @keyframes blink {
+        0%,
+        96%,
+        100% {
+          transform: scaleY(1);
+        }
+        98% {
+          transform: scaleY(0.1);
+        }
+      }
+      .pelican-eye {
+        transform-origin: 485px 148px;
+        animation: blink 4s ease-in-out infinite;
+      }
+
+      /* 圍巾隨風飄舞 */
+      @keyframes scarfFloat {
+        0%,
+        100% {
+          transform: rotate(0deg) skewX(0deg);
+        }
+        50% {
+          transform: rotate(-10deg) skewX(-12deg);
+        }
+      }
+      .scarf-tail {
+        transform-origin: 435px 190px;
+        animation: scarfFloat 0.5s ease-in-out infinite;
+      }
+
+      /* 速度感風線 */
+      @keyframes windLine {
+        0% {
+          transform: translateX(950px);
+          opacity: 0;
+        }
+        20% {
+          opacity: 0.8;
+        }
+        80% {
+          opacity: 0.8;
+        }
+        100% {
+          transform: translateX(-200px);
+          opacity: 0;
+        }
+      }
+      .wind-1 {
+        animation: windLine 1.1s cubic-bezier(0.1, 0.7, 0.9, 0.3) infinite;
+      }
+      .wind-2 {
+        animation: windLine 1.5s 0.4s cubic-bezier(0.1, 0.7, 0.9, 0.3) infinite;
+      }
+      .wind-3 {
+        animation: windLine 0.9s 0.7s cubic-bezier(0.1, 0.7, 0.9, 0.3) infinite;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="title">快活的鵜鶘騎車記 🚲</div>
+
+    <div class="canvas-container">
+      <svg viewBox="0 0 900 520" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <!-- 陰影濾鏡 -->
+          <filter id="softShadow" x="-10%" y="-10%" width="130%" height="130%">
+            <feDropShadow
+              dx="0"
+              dy="8"
+              stdDeviation="6"
+              flood-color="#0f172a"
+              flood-opacity="0.25"
+            />
+          </filter>
+          <!-- 輪圈金屬漸層 -->
+          <linearGradient id="metalRim" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#f8fafc" />
+            <stop offset="50%" stop-color="#94a3b8" />
+            <stop offset="100%" stop-color="#475569" />
+          </linearGradient>
+          <!-- 自行車車架亮眼漸層 (復古活力橘) -->
+          <linearGradient id="frameColor" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#fb923c" />
+            <stop offset="50%" stop-color="#ea580c" />
+            <stop offset="100%" stop-color="#c2410c" />
+          </linearGradient>
+          <!-- 鵜鶘嘴喙/喉囊漸層 -->
+          <linearGradient id="beakYellow" x1="0%" y1="0%" x2="100%" y2="50%">
+            <stop offset="0%" stop-color="#fde047" />
+            <stop offset="70%" stop-color="#f59e0b" />
+            <stop offset="100%" stop-color="#d97706" />
+          </linearGradient>
+          <linearGradient id="pouchPink" x1="0%" y1="0%" x2="10%" y2="100%">
+            <stop offset="0%" stop-color="#fb7185" />
+            <stop offset="60%" stop-color="#f43f5e" />
+            <stop offset="100%" stop-color="#e11d48" />
+          </linearGradient>
+          <!-- 鵜鶘羽毛漸層 -->
+          <linearGradient id="featherGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#ffffff" />
+            <stop offset="85%" stop-color="#f1f5f9" />
+            <stop offset="100%" stop-color="#cbd5e1" />
+          </linearGradient>
+        </defs>
+
+        <!-- 太陽 -->
+        <circle cx="810" cy="85" r="50" fill="#fef08a" opacity="0.85" />
+        <circle cx="810" cy="85" r="62" fill="#fef08a" opacity="0.3" />
+
+        <!-- 遠景雲朵 1 (較快) -->
+        <g class="clouds-1" fill="#ffffff" opacity="0.9">
+          <path d="M120 70 q20 -25 45 -10 q25 -30 55 -5 q25 -15 45 15 h-145 z" />
+          <path d="M620 95 q18 -20 40 -8 q20 -25 48 -4 q22 -12 40 12 h-128 z" />
+          <path d="M1120 70 q20 -25 45 -10 q25 -30 55 -5 q25 -15 45 15 h-145 z" />
+        </g>
+        <!-- 遠景雲朵 2 (較慢) -->
+        <g class="clouds-2" fill="#ffffff" opacity="0.6">
+          <path d="M380 40 q15 -18 35 -6 q18 -20 40 -4 q18 -10 32 10 h-107 z" />
+          <path d="M890 55 q15 -18 35 -6 q18 -20 40 -4 q18 -10 32 10 h-107 z" />
+          <path d="M1380 40 q15 -18 35 -6 q18 -20 40 -4 q18 -10 32 10 h-107 z" />
+        </g>
+
+        <!-- 速度風線 -->
+        <g stroke="#ffffff" stroke-width="3" stroke-linecap="round" opacity="0.7">
+          <line class="wind-1" x1="0" y1="120" x2="160" y2="120" />
+          <line class="wind-2" x1="0" y1="210" x2="220" y2="210" />
+          <line class="wind-3" x1="0" y1="310" x2="140" y2="310" />
+        </g>
+
+        <!-- 地面與馬路背景 -->
+        <!-- 草原與路肩灌木 -->
+        <g class="ground-bushes" fill="#22c55e" opacity="0.75">
+          <circle cx="50" cy="350" r="28" />
+          <circle cx="110" cy="355" r="22" />
+          <circle cx="210" cy="348" r="32" />
+          <circle cx="340" cy="354" r="24" />
+          <circle cx="490" cy="350" r="30" />
+          <circle cx="650" cy="352" r="26" />
+          <circle cx="790" cy="348" r="34" />
+          <circle cx="940" cy="350" r="28" />
+          <circle cx="1090" cy="348" r="32" />
+        </g>
+
+        <!-- 瀝青路面 -->
+        <rect x="0" y="360" width="900" height="160" fill="#334155" />
+        <!-- 路緣石/路面邊線 -->
+        <line x1="0" y1="362" x2="900" y2="362" stroke="#e2e8f0" stroke-width="4" />
+        <!-- 馬路中間動態虛線 -->
+        <line
+          class="road-line"
+          x1="0"
+          y1="440"
+          x2="900"
+          y2="440"
+          stroke="#facc15"
+          stroke-width="6"
+          stroke-linecap="round"
+        />
+
+        <!-- 車輪與車身在地面的陰影 -->
+        <ellipse cx="310" cy="455" rx="72" ry="14" fill="#0f172a" opacity="0.32" />
+        <ellipse cx="590" cy="455" rx="72" ry="14" fill="#0f172a" opacity="0.32" />
+        <ellipse cx="445" cy="458" rx="140" ry="18" fill="#0f172a" opacity="0.22" />
+
+        <!-- ==================== 自行車 (後輪/遠側踏板) ==================== -->
+        <!-- 遠側左踏板與曲柄 (在車架後方) -->
+        <g class="pelican-leg-left">
+          <!-- 遠側大腿與小腿 (鵜鶘左腿) -->
+          <path
+            d="M 405 285 Q 380 325 410 350 L 420 350"
+            stroke="#f59e0b"
+            stroke-width="12"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            fill="none"
+          />
+          <!-- 遠側橘黃色腳蹼 -->
+          <polygon points="410,346 438,342 432,356" fill="#d97706" />
+        </g>
+
+        <!-- 後輪 (外圈橡膠 + 輪圈 + 旋轉輻條) -->
+        <g>
+          <!-- 外胎 -->
+          <circle cx="310" cy="380" r="76" fill="none" stroke="#1e293b" stroke-width="15" />
+          <!-- 白邊復古輪圈 -->
+          <circle cx="310" cy="380" r="69" fill="none" stroke="#f8fafc" stroke-width="3" />
+          <circle cx="310" cy="380" r="66" fill="none" stroke="url(#metalRim)" stroke-width="5" />
+          <!-- 後輪旋轉輻條 -->
+          <g class="wheel-rear" stroke="#94a3b8" stroke-width="2.5" opacity="0.85">
+            <line x1="310" y1="314" x2="310" y2="446" />
+            <line x1="244" y1="380" x2="376" y2="380" />
+            <line x1="263" y1="333" x2="357" y2="427" />
+            <line x1="263" y1="427" x2="357" y2="333" />
+            <line x1="285" y1="319" x2="335" y2="441" />
+            <line x1="285" y1="441" x2="335" y2="319" />
+            <!-- 氣門嘴與反光板 -->
+            <rect x="307" y="322" width="6" height="12" fill="#d97706" rx="2" />
+          </g>
+          <!-- 後軸花鼓 -->
+          <circle cx="310" cy="380" r="10" fill="#475569" />
+          <circle cx="310" cy="380" r="5" fill="#f8fafc" />
+        </g>
+
+        <!-- 前輪 -->
+        <g>
+          <circle cx="590" cy="380" r="76" fill="none" stroke="#1e293b" stroke-width="15" />
+          <circle cx="590" cy="380" r="69" fill="none" stroke="#f8fafc" stroke-width="3" />
+          <circle cx="590" cy="380" r="66" fill="none" stroke="url(#metalRim)" stroke-width="5" />
+          <!-- 前輪旋轉輻條 -->
+          <g class="wheel-front" stroke="#94a3b8" stroke-width="2.5" opacity="0.85">
+            <line x1="590" y1="314" x2="590" y2="446" />
+            <line x1="524" y1="380" x2="656" y2="380" />
+            <line x1="543" y1="333" x2="637" y2="427" />
+            <line x1="543" y1="427" x2="637" y2="333" />
+            <line x1="565" y1="319" x2="615" y2="441" />
+            <line x1="565" y1="441" x2="615" y2="319" />
+            <!-- 反光片 -->
+            <rect x="587" y="322" width="6" height="12" fill="#d97706" rx="2" />
+          </g>
+          <!-- 前軸花鼓 -->
+          <circle cx="590" cy="380" r="10" fill="#475569" />
+          <circle cx="590" cy="380" r="5" fill="#f8fafc" />
+        </g>
+
+        <!-- 自行車車架 (幾何三角架構) -->
+        <g stroke-linecap="round" stroke-linejoin="round">
+          <!-- 傳動鏈條與鏈罩 -->
+          <path d="M 310 380 L 430 380" stroke="#475569" stroke-width="7" />
+          <circle cx="430" cy="380" r="22" fill="#334155" />
+          <circle cx="430" cy="380" r="16" fill="#64748b" />
+
+          <!-- 後下叉 & 後上叉 -->
+          <line x1="310" y1="380" x2="430" y2="380" stroke="url(#frameColor)" stroke-width="10" />
+          <line x1="310" y1="380" x2="385" y2="280" stroke="url(#frameColor)" stroke-width="10" />
+
+          <!-- 座管 (Seat Tube) -->
+          <line x1="430" y1="380" x2="380" y2="265" stroke="url(#frameColor)" stroke-width="12" />
+
+          <!-- 下管 (Down Tube) -->
+          <line x1="430" y1="380" x2="540" y2="245" stroke="url(#frameColor)" stroke-width="13" />
+
+          <!-- 上管 (Top Tube) -->
+          <line x1="385" y1="280" x2="538" y2="245" stroke="url(#frameColor)" stroke-width="11" />
+
+          <!-- 前叉與頭管 (Front Fork & Head Tube) -->
+          <line x1="590" y1="380" x2="540" y2="245" stroke="url(#frameColor)" stroke-width="11" />
+          <line x1="540" y1="245" x2="530" y2="215" stroke="url(#frameColor)" stroke-width="12" />
+
+          <!-- 前擋泥板 & 後擋泥板 (復古弧形) -->
+          <path
+            d="M 245 365 A 76 76 0 0 1 350 310"
+            fill="none"
+            stroke="#f97316"
+            stroke-width="8"
+            stroke-linecap="round"
+          />
+          <path
+            d="M 545 310 A 76 76 0 0 1 630 340"
+            fill="none"
+            stroke="#f97316"
+            stroke-width="8"
+            stroke-linecap="round"
+          />
+
+          <!-- 坐墊支架與彈簧坐墊 -->
+          <line x1="380" y1="265" x2="378" y2="248" stroke="#94a3b8" stroke-width="8" />
+          <!-- 復古皮革座包 -->
+          <path
+            d="M 345 246 C 365 240, 400 240, 412 250 C 405 258, 360 258, 345 246 Z"
+            fill="#78350f"
+            stroke="#451a03"
+            stroke-width="3"
+          />
+          <circle cx="360" cy="254" r="4" fill="#94a3b8" />
+          <!-- 坐墊小彈簧 -->
+
+          <!-- 龍頭握把 (Handlebar) 與鈴鐺 -->
+          <path
+            d="M 530 215 L 525 195 Q 520 180 500 185"
+            fill="none"
+            stroke="#cbd5e1"
+            stroke-width="8"
+          />
+          <rect x="492" y="180" width="16" height="10" rx="3" fill="#1e293b" />
+          <!-- 把手橡膠套 -->
+          <!-- 金屬車鈴 -->
+          <circle cx="528" cy="188" r="7" fill="#facc15" stroke="#b45309" stroke-width="2" />
+          <!-- 前車燈 -->
+          <path
+            d="M 546 220 L 565 220 L 572 230 L 546 230 Z"
+            fill="#e2e8f0"
+            stroke="#64748b"
+            stroke-width="2"
+          />
+          <polygon points="572,221 660,195 660,255 572,229" fill="#fef08a" opacity="0.3" />
+          <!-- 燈光光束 -->
+        </g>
+
+        <!-- ==================== 鵜鶘本體 (Pelican) ==================== -->
+        <g class="pelican-rider" filter="url(#softShadow)">
+          <!-- 尾巴羽毛 -->
+          <path
+            d="M 330 255 Q 310 240 305 255 Q 315 270 340 275 Z"
+            fill="#cbd5e1"
+            stroke="#94a3b8"
+            stroke-width="2"
+          />
+          <path d="M 335 260 Q 318 250 315 265 Q 325 276 345 278 Z" fill="#e2e8f0" />
+
+          <!-- 胖乎乎的白鳥身體 -->
+          <path
+            d="M 345 270 C 340 230, 375 195, 415 200 C 435 202, 455 225, 450 260 C 445 295, 400 308, 370 300 C 352 295, 346 285, 345 270 Z"
+            fill="url(#featherGrad)"
+            stroke="#cbd5e1"
+            stroke-width="3"
+          />
+
+          <!-- 飄逸的紅圍巾 (隨風向後甩) -->
+          <g>
+            <path
+              class="scarf-tail"
+              d="M 430 195 Q 375 195 340 180 Q 330 200 365 205 Q 405 210 435 205 Z"
+              fill="#ef4444"
+              stroke="#b91c1c"
+              stroke-width="2"
+            />
+            <ellipse cx="438" cy="198" rx="14" ry="10" fill="#dc2626" />
+          </g>
+
+          <!-- S型優雅長脖子與頭部 -->
+          <path
+            d="M 425 205 C 430 175, 450 160, 460 145 C 468 135, 480 135, 492 145 C 498 152, 495 168, 485 180 C 470 198, 452 208, 440 215 Z"
+            fill="url(#featherGrad)"
+            stroke="#cbd5e1"
+            stroke-width="2"
+          />
+
+          <!-- 鵜鶘頭頂呆毛 (一撮翹起來的小羽毛) -->
+          <path
+            d="M 475 136 Q 460 115 448 122 Q 462 130 472 139"
+            fill="none"
+            stroke="#94a3b8"
+            stroke-width="3"
+            stroke-linecap="round"
+          />
+          <path
+            d="M 478 135 Q 470 110 460 115 Q 468 126 476 138"
+            fill="none"
+            stroke="#94a3b8"
+            stroke-width="2.5"
+            stroke-linecap="round"
+          />
+
+          <!-- 戴著酷炫的飛行員護目鏡 (Goggles) -->
+          <g>
+            <!-- 護目鏡皮帶 -->
+            <path
+              d="M 460 148 Q 475 152 505 145"
+              fill="none"
+              stroke="#451a03"
+              stroke-width="5"
+              stroke-linecap="round"
+            />
+            <!-- 鏡框與鏡片 (左眼側視) -->
+            <ellipse
+              cx="488"
+              cy="148"
+              rx="13"
+              ry="15"
+              fill="#38bdf8"
+              stroke="#78350f"
+              stroke-width="4"
+            />
+            <!-- 鏡片反光高光 -->
+            <path
+              d="M 482 140 L 494 148"
+              stroke="#ffffff"
+              stroke-width="3"
+              stroke-linecap="round"
+            />
+            <circle cx="493" cy="154" r="2" fill="#ffffff" />
+          </g>
+
+          <!-- 眼睛 (藏在護目鏡後面透出靈動眼神) -->
+          <g class="pelican-eye">
+            <circle cx="488" cy="149" r="6" fill="#0f172a" />
+            <circle cx="490" cy="147" r="2.5" fill="#ffffff" />
+          </g>
+
+          <!-- 鵜鶘標誌性特徵：巨型長黃嘴 + 粉紅色大喉囊 (Pouch) -->
+          <!-- 上喙 (堅硬鋒利的黃色長嘴，端部有彎鉤) -->
+          <path
+            d="M 490 152 L 605 168 Q 618 172 612 180 Q 600 182 590 180 L 490 172 Z"
+            fill="url(#beakYellow)"
+            stroke="#b45309"
+            stroke-width="2"
+          />
+          <path d="M 605 168 Q 618 172 612 180" fill="none" stroke="#b45309" stroke-width="3" />
+          <!-- 尖嘴鉤 -->
+
+          <!-- 膨脹有彈性的大喉囊 (Pouch) -->
+          <path
+            class="pouch"
+            d="M 490 172 L 590 180 C 585 215, 545 250, 500 242 C 480 238, 470 215, 475 185 Z"
+            fill="url(#pouchPink)"
+            stroke="#be123c"
+            stroke-width="3"
+          />
+          <!-- 喉囊上的微細彈性血管紋路 -->
+          <path
+            d="M 525 185 Q 535 210 515 230"
+            fill="none"
+            stroke="#f43f5e"
+            stroke-width="1.8"
+            opacity="0.6"
+          />
+          <path
+            d="M 550 188 Q 560 205 545 220"
+            fill="none"
+            stroke="#f43f5e"
+            stroke-width="1.8"
+            opacity="0.6"
+          />
+
+          <!-- 鵜鶘翅膀 (一隻手像手臂一樣搭在自行車車把把手上) -->
+          <g class="wing-arm">
+            <!-- 翅膀肩膀與羽翼折疊部分 -->
+            <path
+              d="M 390 225 Q 425 215 460 215 Q 490 210 500 190 Q 480 215 450 235 Q 410 255 385 245 Z"
+              fill="#f8fafc"
+              stroke="#94a3b8"
+              stroke-width="3"
+            />
+            <!-- 握住把手的羽毛尖端 -->
+            <circle cx="500" cy="188" r="8" fill="#e2e8f0" stroke="#64748b" stroke-width="2" />
+            <path d="M 495 192 Q 503 192 505 186" fill="none" stroke="#475569" stroke-width="2.5" />
+          </g>
+        </g>
+
+        <!-- ==================== 前側踏板機構與近側腿 (右側) ==================== -->
+        <!-- 旋轉大齒盤、曲柄和踏板 -->
+        <g class="crank-assembly">
+          <!-- 齒盤花盤 -->
+          <circle
+            cx="430"
+            cy="380"
+            r="18"
+            fill="url(#metalRim)"
+            stroke="#334155"
+            stroke-width="2"
+          />
+          <circle cx="430" cy="380" r="7" fill="#f8fafc" />
+          <!-- 曲柄臂 (向兩側伸展) -->
+          <line
+            x1="430"
+            y1="380"
+            x2="430"
+            y2="418"
+            stroke="#e2e8f0"
+            stroke-width="8"
+            stroke-linecap="round"
+          />
+          <line
+            x1="430"
+            y1="380"
+            x2="430"
+            y2="342"
+            stroke="#64748b"
+            stroke-width="7"
+            stroke-linecap="round"
+          />
+          <!-- 踏板軸心點 -->
+          <circle cx="430" cy="418" r="4" fill="#1e293b" />
+          <circle cx="430" cy="342" r="4" fill="#1e293b" />
+        </g>
+
+        <!-- 右腳 (近側) - 踩著下方踏板 -->
+        <g class="pelican-leg-right">
+          <!-- 大腿與小腿骨骼連桿 -->
+          <path
+            d="M 410 288 Q 440 345 430 410"
+            stroke="#f59e0b"
+            stroke-width="14"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            fill="none"
+          />
+          <path
+            d="M 410 288 Q 440 345 430 410"
+            stroke="#d97706"
+            stroke-width="8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            fill="none"
+          />
+          <!-- 大橘色腳蹼踩在踏板上 -->
+          <polygon
+            points="415,410 448,414 435,426 410,418"
+            fill="#ea580c"
+            stroke="#c2410c"
+            stroke-width="2"
+          />
+        </g>
+
+        <!-- 前側踏板 (水平保持水平) -->
+        <g class="pedal-left">
+          <rect
+            x="415"
+            y="415"
+            width="30"
+            height="7"
+            rx="3"
+            fill="#1e293b"
+            stroke="#64748b"
+            stroke-width="1.5"
+          />
+          <rect x="424" y="416" width="12" height="5" rx="1" fill="#f59e0b" />
+          <!-- 踏板反光黃條 -->
+        </g>
+      </svg>
+    </div>
+  </body>
+</html>

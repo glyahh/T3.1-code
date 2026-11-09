@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import { useState } from "react";
 
 import {
@@ -12,6 +13,8 @@ import { SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
 export function CliCommandSettingsRow() {
+  const settingsText = useSettingsText();
+
   const bridge = getDesktopCliCommandBridge();
   const query = useEnvironmentQuery(bridge ? desktopCliCommandStateAtom : null);
   const state = query.data;
@@ -47,7 +50,7 @@ export function CliCommandSettingsRow() {
   return (
     <SettingsRow
       {...searchableSetting("cli-command")}
-      description={description}
+      description={settingsText(description)}
       control={
         <Button
           size="sm"
@@ -55,7 +58,7 @@ export function CliCommandSettingsRow() {
           disabled={pending || query.isPending}
           onClick={() => change(installed ? "uninstall" : "install")}
         >
-          {installed ? "Remove" : "Install"}
+          {installed ? settingsText("Remove") : settingsText("Install")}
         </Button>
       }
     />

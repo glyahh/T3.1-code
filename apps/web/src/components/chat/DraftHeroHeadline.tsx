@@ -295,7 +295,7 @@ export function DraftHeroHeadline({
         <TooltipTrigger
           render={
             <ComboboxTrigger
-              render={<InlineButton tone="picker" />}
+              render={<InlineButton tone="picker" decoration="dotted" />}
               data-draft-project-trigger=""
               className="pointer-events-auto min-w-0 max-w-full align-baseline"
             />
@@ -383,6 +383,7 @@ export function DraftHeroHeadline({
           render={
             <InlineButton
               tone="muted"
+              decoration="dotted"
               className="pointer-events-auto"
               onClick={() =>
                 void startScratch().then((started) => {

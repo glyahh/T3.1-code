@@ -10,15 +10,17 @@ import { AppRoot } from "~/AppRoot";
 import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import { getRouter } from "~/router";
-import {
-  ENVIRONMENT_ID,
-  PROJECT_ID,
-  installFakeEnvironment,
-  type FakeDriver,
-} from "../../test/fakeEnvironment";
+import { ENVIRONMENT_ID, PROJECT_ID, type FakeDriver } from "../../test/fakeEnvironment";
 import { render } from "../../test/render";
 
-// The socket is the only fake layer; see test/appScenarios.renders.tsx.
+const wire = await vi.hoisted(async () => {
+  const { installFakeEnvironment } = await import("../../test/fakeEnvironment");
+  const environment = installFakeEnvironment([]);
+  const fetchSpy = vi.spyOn(globalThis, "fetch");
+  return { environment, fetchSpy };
+});
+
+// Only HTTP and socket transports are fake; see test/appScenarios.renders.tsx.
 vi.mock("../../../../packages/client-runtime/src/connection/driver.ts", async (importOriginal) => {
   const [actual, { fakeDriver }, Layer] = await Promise.all([
     importOriginal<{ readonly ConnectionDriver: Context.Key<unknown, FakeDriver> }>(),
@@ -33,21 +35,23 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
   trackRpcRequestSent: () => {},
 }));
 
-it("a new draft does not load its reserved thread before the server lists it", async () => {
-  using _environment = installFakeEnvironment([]);
-  using fetchSpy = vi.spyOn(globalThis, "fetch");
-  __setClientSettingsForTests({
-    ...DEFAULT_CLIENT_SETTINGS,
-    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
-  });
-  const draftId = DraftId.make("draft-27443");
-  const threadId = ThreadId.make("thread-27443");
-  useComposerDraftStore
-    .getState()
-    .setProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), draftId, { threadId });
+__setClientSettingsForTests({
+  ...DEFAULT_CLIENT_SETTINGS,
+  onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+});
+const draftId = DraftId.make("draft-27443");
+const threadId = ThreadId.make("thread-27443");
+useComposerDraftStore
+  .getState()
+  .setProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), draftId, { threadId });
 
-  const router = getRouter(createMemoryHistory({ initialEntries: [`/draft/${draftId}`] }));
-  await router.load();
+// Route preparation is fixture setup; its work still counts toward the whole gate's deadline.
+const router = getRouter(createMemoryHistory({ initialEntries: [`/draft/${draftId}`] }));
+await router.load();
+
+it("a new draft does not load its reserved thread before the server lists it", async () => {
+  using _environment = wire.environment;
+  using fetchSpy = wire.fetchSpy;
   await using _app = await render(<AppRoot router={router} />, {
     // AppRoot brings its own router.
     router: false,
@@ -56,9 +60,12 @@ it("a new draft does not load its reserved thread before the server lists it", a
   // The shell snapshot has arrived once the sidebar lists the project, so the connection is up.
   await expect.element(page.getByText("render", { exact: true }).first()).toBeVisible();
 
-  const threadRequests = fetchSpy.mock.calls
-    .map(([input]) => String(input instanceof Request ? input.url : input))
-    .filter((url) => url.includes(`/api/orchestration/threads/${threadId}/`));
+  const requestUrls = fetchSpy.mock.calls.map(([input]) =>
+    String(input instanceof Request ? input.url : input),
+  );
+  const threadRequests = requestUrls.filter((url) =>
+    url.includes(`/api/orchestration/threads/${threadId}/`),
+  );
   // A 404 here marks the thread deleted, and the view never loads it once the send creates it.
   expect(threadRequests).toEqual([]);
 });

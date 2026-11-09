@@ -1,7 +1,9 @@
+import { isNewLiveText } from "@t3tools/client-runtime/streaming-text";
+import { ContentPreviewPinContext } from "./ContentPreview";
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
 import { type RunId } from "@t3tools/contracts";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
-import { memo, use, useState } from "react";
+import { memo, use, useState, useRef } from "react";
 import { type ChatMessage, type TurnDiffSummary } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
 import { GitForkIcon } from "lucide-react";
@@ -23,6 +25,7 @@ import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../times
 import { useV2ItemSupport } from "../../state/v2ItemSupport";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
 import { MESSAGE_HEADING_LEVEL, MessageAuthorHeading } from "./TimelineRowParts";
+import { useStreamingText } from "./useStreamingText";
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
@@ -32,13 +35,49 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
     row.projectedItem?.item.id,
   );
   const text = liveText ?? row.message.text;
-  const messageText = text || (row.message.streaming ? "" : "(empty response)");
+  const activity = use(TimelineRowActivityCtx);
+  const fresh = isNewLiveText(
+    `${ctx.activeThreadEnvironmentId}:${ctx.threadRef?.threadId}:${row.message.runId}:${row.projectedItem?.item.id}`,
+    ctx.openedTextSequence ?? Infinity,
+  );
+  const natural =
+    fresh &&
+    row.message.phase !== "final_answer" &&
+    (row.message.phase !== undefined || (!row.message.streaming && text.length <= 256));
+  const displayedText = useStreamingText(
+    row.id,
+    text,
+    row.message.streaming && fresh,
+    activity.isWorking && activity.latestRunId === row.message.runId && !activity.awaitingUser,
+    natural,
+    row.message.phase !== undefined,
+  );
+  const messageText = displayedText || (row.message.streaming ? "" : "(empty response)");
+  const measuredRun = useRef<string | null>(null);
+  const recordFirstText = (element: HTMLDivElement | null) => {
+    if (
+      !element ||
+      !row.message.streaming ||
+      !messageText ||
+      !row.message.runId ||
+      measuredRun.current === row.message.runId
+    )
+      return;
+    measuredRun.current = row.message.runId;
+    const mark = `t3:text-committed:${ctx.activeThreadEnvironmentId}:${row.message.runId}`;
+    performance.clearMarks(mark);
+    performance.mark(mark);
+  };
 
   return (
-    <>
+    <ContentPreviewPinContext value={(open) => ctx.onAppFullscreenChange(row.id, open)}>
       <div className="relative min-w-0 px-1 py-0.5">
         <MessageAuthorHeading>T3 Code</MessageAuthorHeading>
-        <div data-thread-find-text="true">
+        <div
+          ref={messageText ? recordFirstText : undefined}
+          data-thread-find-text="true"
+          className="agent-process-prose"
+        >
           <AssistantCitationSource
             messageId={row.message.id}
             {...(ctx.threadRef ? { threadRef: ctx.threadRef } : {})}
@@ -50,7 +89,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
               text={messageText}
               cwd={ctx.markdownCwd}
               threadRef={ctx.threadRef ?? undefined}
-              isStreaming={Boolean(row.message.streaming)}
+              isStreaming={row.message.streaming || displayedText !== text}
               lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
               skills={ctx.skills}
               headingLevelOffset={MESSAGE_HEADING_LEVEL}
@@ -78,7 +117,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
           />
         ) : null}
       </div>
-    </>
+    </ContentPreviewPinContext>
   );
 }
 

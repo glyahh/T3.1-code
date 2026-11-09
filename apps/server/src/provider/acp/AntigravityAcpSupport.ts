@@ -1,3 +1,4 @@
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   type AntigravityAuthMethod,
@@ -50,9 +51,27 @@ export const makeAntigravityAcpRuntime = Effect.fn("makeAntigravityAcpRuntime")(
   EffectAcpErrors.AcpError,
   Crypto.Crypto | Scope.Scope
 > {
+  const hostPlatform = input.processGroupPlatform ?? (yield* HostProcess.Platform);
+  let reportDiagnostic: (title: string) => Effect.Effect<void> = () => Effect.void;
+  const stderrHandler = makeAntigravityStderrHandler({
+    ...(input.onAuthorizationUrl ? { onAuthorizationUrl: input.onAuthorizationUrl } : {}),
+    onDiagnostic: (diagnostic) =>
+      Effect.logWarning("Antigravity ACP proxy failure", diagnostic).pipe(
+        Effect.andThen(
+          reportDiagnostic(
+            diagnostic.category === "backend_connection_failed"
+              ? "Provider connection failed"
+              : "Provider connection issue",
+          ),
+        ),
+      ),
+  });
   const context = yield* Layer.build(
     AcpSessionRuntime.layer({
       ...input,
+      ownDetachedProcessGroup: true,
+      ownDescendantProcessGroups: hostPlatform === "linux",
+      processGroupPlatform: hostPlatform,
       authMethodId: input.authMethod ?? "oauth-personal",
       authenticateEagerly: true,
       resumeMethod: "resume",
@@ -67,9 +86,10 @@ export const makeAntigravityAcpRuntime = Effect.fn("makeAntigravityAcpRuntime")(
       transformStdout: makeAntigravityStdoutTransform(
         input.onAuthorizationUrl ? { onAuthorizationUrl: input.onAuthorizationUrl } : {},
       ),
-      onStderr: makeAntigravityStderrHandler(
-        input.onAuthorizationUrl ? { onAuthorizationUrl: input.onAuthorizationUrl } : {},
-      ),
+      onStderr: (text, report) => {
+        reportDiagnostic = report;
+        return stderrHandler(text);
+      },
       transformSessionUpdate: normalizeAntigravitySessionUpdate,
     }).pipe(
       Layer.provide(

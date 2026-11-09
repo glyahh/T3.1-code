@@ -1,3 +1,5 @@
+import { ContentPreview, ContentPreviewContext } from "./chat/ContentPreview";
+import { contentBlockReady } from "./chat/contentBlockReady";
 import { buildFileLinkParentSuffixByPath, fileLinkLabel } from "@t3tools/shared/fileLinks";
 import {
   isWindowsDrivePathHref,
@@ -942,6 +944,7 @@ const ChatMarkdownRendererContext = React.createContext<
 
 // Isolate streamed source text from the renderer context; only offset-based renderers need it.
 const ChatMarkdownTextContext = React.createContext("");
+const MarkdownBlockStreaming = React.createContext(false);
 
 function markdownHeadingRenderer(level: 1 | 2 | 3 | 4 | 5 | 6) {
   const Tag = `h${level}` as const;
@@ -1553,11 +1556,30 @@ const CHAT_MARKDOWN_COMPONENTS = {
     }
     return <ChatMarkdownImageFallback alt={altText} copyMarkdown={copyMarkdown} kind={kind} />;
   },
-  table: function MarkdownTableRenderer({ node: _node, ...props }) {
-    return <MarkdownTable {...props} />;
+  table: function MarkdownTableRenderer({ node, ...props }) {
+    const text = use(ChatMarkdownTextContext);
+    const isStreaming = use(MarkdownBlockStreaming);
+    const end = node?.position?.end.offset ?? text.length;
+    return (
+      <ContentPreview
+        disabled={!contentBlockReady("", "table", isStreaming, text.slice(end).trim().length > 0)}
+      >
+        <MarkdownTable {...props} />
+      </ContentPreview>
+    );
   },
-  details: function MarkdownDetailsRenderer({ node: _node, children, open: detailsOpen }) {
-    return <MarkdownDetails open={detailsOpen}>{children}</MarkdownDetails>;
+  details: function MarkdownDetailsRenderer({ node, children, open: detailsOpen }) {
+    const text = use(ChatMarkdownTextContext);
+    const isStreaming = use(MarkdownBlockStreaming);
+    const source = text.slice(node?.position?.start.offset, node?.position?.end.offset);
+    return (
+      <ContentPreview
+        disabled={!contentBlockReady(source, "details", isStreaming, false)}
+        preview={<MarkdownDetails open>{children}</MarkdownDetails>}
+      >
+        <MarkdownDetails open={detailsOpen}>{children}</MarkdownDetails>
+      </ContentPreview>
+    );
   },
   pre: function MarkdownPre({ node, children, ...props }) {
     const {
@@ -1570,6 +1592,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       mathEnabled,
     } = use(ChatMarkdownRendererContext);
     const text = use(ChatMarkdownTextContext);
+    const inPreview = use(ContentPreviewContext);
     const codeBlock = extractCodeBlock(children);
     if (!codeBlock) {
       return <pre {...props}>{children}</pre>;
@@ -1621,20 +1644,34 @@ const CHAT_MARKDOWN_COMPONENTS = {
       );
     }
     return (
-      <MarkdownCodeBlock
-        code={codeBlock.code}
-        language={language}
-        fenceTitle={fenceTitle}
-        theme={resolvedTheme}
-        onRunShellCommand={
-          onRunShellCommand && !isStreaming && isClosedCodeFence(node, text, codeBlock.code)
-            ? onRunShellCommand
-            : undefined
+      <ContentPreview
+        disabled={
+          !contentBlockReady(
+            text.slice(node?.position?.start.offset, node?.position?.end.offset),
+            "code",
+            isStreaming,
+            false,
+          )
         }
-        isStreaming={isStreaming}
       >
-        {highlightedCode}
-      </MarkdownCodeBlock>
+        <MarkdownCodeBlock
+          code={codeBlock.code}
+          language={language}
+          fenceTitle={fenceTitle}
+          theme={resolvedTheme}
+          onRunShellCommand={
+            !inPreview &&
+            onRunShellCommand &&
+            !isStreaming &&
+            isClosedCodeFence(node, text, codeBlock.code)
+              ? onRunShellCommand
+              : undefined
+          }
+          isStreaming={isStreaming}
+        >
+          {highlightedCode}
+        </MarkdownCodeBlock>
+      </ContentPreview>
     );
   },
 } satisfies Components;
@@ -1769,20 +1806,24 @@ function ChatMarkdown({
     >
       <ChatMarkdownRendererContext value={componentState}>
         {blocks.map((source, index) => (
-          <MarkdownSource
+          <MarkdownBlockStreaming
             // oxlint-disable-next-line react/no-array-index-key -- streamed blocks only change at the end
             key={index}
-            text={source}
-            remarkPlugins={remarkPlugins}
-            rehypePlugins={
-              parseRawHtml
-                ? CHAT_MARKDOWN_RENDER_REHYPE_PLUGINS
-                : CHAT_MARKDOWN_LITERAL_HTML_REHYPE_PLUGINS
-            }
-            shared={!uncachedPlugins}
-            // Every block before the last is finished, so its parse can be reused.
-            cache={!props.isStreaming || index < blocks.length - 1}
-          />
+            value={props.isStreaming === true && index === blocks.length - 1}
+          >
+            <MarkdownSource
+              text={source}
+              remarkPlugins={remarkPlugins}
+              rehypePlugins={
+                parseRawHtml
+                  ? CHAT_MARKDOWN_RENDER_REHYPE_PLUGINS
+                  : CHAT_MARKDOWN_LITERAL_HTML_REHYPE_PLUGINS
+              }
+              shared={!uncachedPlugins}
+              // Every block before the last is finished, so its parse can be reused.
+              cache={!props.isStreaming || index < blocks.length - 1}
+            />
+          </MarkdownBlockStreaming>
         ))}
       </ChatMarkdownRendererContext>
       {localMediaPreview ? (

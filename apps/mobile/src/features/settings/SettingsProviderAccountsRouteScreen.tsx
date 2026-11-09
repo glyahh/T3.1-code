@@ -6,6 +6,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   AuthProvidersManageScope,
+  AuthOrchestrationReadScope,
   type ProviderAuthResponse,
   type ServerProvider,
 } from "@t3tools/contracts";
@@ -24,7 +25,7 @@ import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
-import { useEnvironmentsWithScope } from "../../state/session";
+import { useEnvironmentsWithScope, useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import {
@@ -117,6 +118,8 @@ function ProviderAccount({
   const complete = useAtomCommand(serverEnvironment.completeProviderAuth, options);
   const cancel = useAtomCommand(serverEnvironment.cancelProviderAuth, options);
   const logout = useAtomCommand(serverEnvironment.logoutProviderAuth, options);
+  const refresh = useAtomCommand(serverEnvironment.refreshProviders, options);
+  const canRefresh = useEnvironmentScope(environmentId, AuthOrchestrationReadScope);
   // Matches ListRowLayout: large text stacks the action below instead of squeezing the status.
   const stacked = useWindowDimensions().fontScale >= 1.5;
   const [pending, setPending] = useState(false);
@@ -346,6 +349,25 @@ function ProviderAccount({
         <ProviderAccountSummary key={email} name={name} status={status} email={email} />
         {trailing}
       </View>
+      <SettingsActionRow
+        icon="arrow.clockwise"
+        label="Refresh current configuration"
+        disabled={
+          !canRefresh ||
+          pending ||
+          active ||
+          provider.updateState?.status === "running" ||
+          provider.updateState?.status === "queued"
+        }
+        onPress={() => {
+          void run(() =>
+            refresh({
+              environmentId,
+              input: { instanceId, refreshModels: true, reloadSecrets: true },
+            }),
+          );
+        }}
+      />
       {interaction?.type === "deviceCode" ||
       interaction?.type === "terminal" ||
       interaction?.type === "credentials" ||

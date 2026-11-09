@@ -35,7 +35,8 @@ import {
 } from "../ClaudeProvider.ts";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
-import { resolveClaudeModelCatalog } from "../ClaudeModelCatalog.ts";
+import { resolveClaudeModelCatalog, scopeClaudeModelCatalog } from "../ClaudeModelCatalog.ts";
+import { readClaudeModelRouting } from "./ClaudeSkills.ts";
 import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
@@ -59,6 +60,7 @@ import {
   makeClaudeCapabilitiesCacheKey,
   makeClaudeContinuationGroupKey,
   resolveClaudeHomePath,
+  makeClaudeEnvironment,
 } from "./ClaudeHome.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
@@ -131,10 +133,25 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
     const latestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
     const resetCreditCoordinator = yield* ResetCreditCoordinator.ResetCreditCoordinator;
     const catalogService = yield* ModelCatalog.ModelCatalog;
-    const modelCatalog = catalogService
-      .current(DRIVER_KIND)
-      .pipe(Effect.map(resolveClaudeModelCatalog));
-    const processEnv = yield* mergeProviderInstanceEnvironment(environment);
+    const modelCatalog = catalogService.current(DRIVER_KIND).pipe(
+      Effect.flatMap((catalog) =>
+        readClaudeModelRouting(config, processEnv).pipe(
+          Effect.map((routing) =>
+            scopeClaudeModelCatalog(
+              resolveClaudeModelCatalog(catalog),
+              config.customModels,
+              routing,
+            ),
+          ),
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+        ),
+      ),
+    );
+    const processEnv = yield* makeClaudeEnvironment(
+      config,
+      yield* mergeProviderInstanceEnvironment(environment),
+    );
     const fallbackContinuationIdentity = defaultProviderContinuationIdentity({
       driverKind: DRIVER_KIND,
       instanceId,
@@ -170,6 +187,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
     });
 
     const scopedLimitNames = yield* makeClaudeScopedLimitNames;
+    const configurationRevision = yield* Ref.make(0);
     const orchestrationAdapter = yield* createClaudeAdapterV2(
       {
         instanceId,
@@ -179,7 +197,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         enabled,
         config,
       },
-      { scopedLimitNames, onUsageLimits: (update) => snapshot.applyUsageLimits(update) },
+      {
+        scopedLimitNames,
+        onUsageLimits: (update) => snapshot.applyUsageLimits(update),
+        configurationRevision: Ref.get(configurationRevision),
+      },
     ).pipe(
       Effect.mapError(
         (cause) =>
@@ -396,7 +418,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       accentColor,
       enabled,
       snapshot,
-      invalidateCaches: Cache.invalidateAll(capabilitiesProbeCache),
+      invalidateCaches: Cache.invalidateAll(capabilitiesProbeCache).pipe(
+        Effect.andThen(Ref.set(lastGoodCapabilities, undefined)),
+        Effect.andThen(Ref.update(configurationRevision, (revision) => revision + 1)),
+      ),
       snapshotForCwd: (cwd: string) =>
         snapshot.getSnapshot.pipe(
           Effect.flatMap((machineSnapshot) =>

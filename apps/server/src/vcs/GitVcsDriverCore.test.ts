@@ -44,6 +44,10 @@ import * as GitVcsDriver from "./GitVcsDriver.ts";
 import { gitConfigEnv } from "./VcsProcess.ts";
 
 const encodeGitCommandError = Schema.encodeEffect(Schema.fromJsonString(GitCommandError));
+const windowsFixture = HostProcess.Platform.defaultValue() === "win32";
+const gitNull = windowsFixture ? "NUL" : NodeOS.devNull;
+const quoteGitShellPath = (path: string) =>
+  "'" + path.replaceAll("\\", "/").replaceAll("'", "'\"'\"'") + "'";
 const decodeVcsRef = Schema.decodeUnknownSync(VcsRef);
 const decodeVcsListRefsResult = Schema.decodeUnknownSync(VcsListRefsResult);
 
@@ -629,13 +633,17 @@ it.effect(
             )
               return handle;
             holdDiscovery = false;
-            const output = yield* Stream.runCollect(handle.stdout);
-            yield* handle.exitCode;
-            yield* Deferred.succeed(discoveryComplete, undefined);
-            yield* Deferred.await(releaseDiscovery);
             return ChildProcessSpawner.makeHandle({
               ...handle,
-              stdout: Stream.fromIterable(output),
+              stdout: Stream.unwrap(
+                Effect.gen(function* () {
+                  const output = yield* Stream.runCollect(handle.stdout);
+                  yield* handle.exitCode;
+                  yield* Deferred.succeed(discoveryComplete, undefined);
+                  yield* Deferred.await(releaseDiscovery);
+                  return Stream.fromIterable(output);
+                }),
+              ),
             });
           }),
         );
@@ -687,11 +695,18 @@ it.effect("invalidates cached metadata after interrupted worktree creation", () 
           )
             return handle;
           holdDiscovery = false;
-          const output = yield* Stream.runCollect(handle.stdout);
-          yield* handle.exitCode;
-          yield* Deferred.succeed(discoveryComplete, undefined);
-          yield* Deferred.await(releaseDiscovery);
-          return ChildProcessSpawner.makeHandle({ ...handle, stdout: Stream.fromIterable(output) });
+          return ChildProcessSpawner.makeHandle({
+            ...handle,
+            stdout: Stream.unwrap(
+              Effect.gen(function* () {
+                const output = yield* Stream.runCollect(handle.stdout);
+                yield* handle.exitCode;
+                yield* Deferred.succeed(discoveryComplete, undefined);
+                yield* Deferred.await(releaseDiscovery);
+                return Stream.fromIterable(output);
+              }),
+            ),
+          });
         }),
       );
       const driver = yield* makeGitVcsDriverCore().pipe(
@@ -961,11 +976,21 @@ it.effect("retries an in-flight ref snapshot invalidated by a mutation", () =>
           }
           const isWorktreeScan =
             command.args.includes("worktree") && command.args.includes("--porcelain");
-          if (isWorktreeScan && (yield* Ref.getAndSet(delayFirstWorktreeScan, false))) {
-            yield* Deferred.succeed(firstWorktreeScanStarted, undefined);
-            yield* Deferred.await(releaseFirstWorktreeScan);
-          }
+          const delayed = isWorktreeScan && (yield* Ref.getAndSet(delayFirstWorktreeScan, false));
           const handle = yield* delegate.spawn(command);
+          if (delayed)
+            return ChildProcessSpawner.makeHandle({
+              ...handle,
+              stdout: Stream.unwrap(
+                Effect.gen(function* () {
+                  const output = yield* Stream.runCollect(handle.stdout);
+                  yield* handle.exitCode;
+                  yield* Deferred.succeed(firstWorktreeScanStarted, undefined);
+                  yield* Deferred.await(releaseFirstWorktreeScan);
+                  return Stream.fromIterable(output);
+                }),
+              ),
+            });
           const isRefScan =
             command.args.includes("for-each-ref") &&
             command.args.includes("refs/heads") &&
@@ -1733,7 +1758,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
               operation: "GitVcsDriver.test.sshRefusal",
               cwd,
               args: ["fetch", "origin"],
-              env: { LC_ALL: "C", GIT_SSH_COMMAND: fakeSsh },
+              env: { LC_ALL: "C", GIT_SSH_COMMAND: quoteGitShellPath(fakeSsh) },
             })
             .pipe(Effect.flip);
 
@@ -1765,7 +1790,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
             operation: "GitVcsDriver.test.osPermission",
             cwd,
             args: ["fetch", "origin"],
-            env: { LC_ALL: "C", GIT_SSH_COMMAND: fakeSsh },
+            env: { LC_ALL: "C", GIT_SSH_COMMAND: quoteGitShellPath(fakeSsh) },
           })
           .pipe(Effect.flip);
 
@@ -1884,7 +1909,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const upstream = yield* makeTmpDir();
         yield* initRepoWithCommit(upstream);
         const driver = yield* GitVcsDriver.GitVcsDriver;
-        const emptyTree = yield* git(upstream, ["hash-object", "-t", "tree", NodeOS.devNull]);
+        const emptyTree = yield* git(upstream, ["hash-object", "-t", "tree", gitNull]);
         const root = yield* git(upstream, ["rev-parse", "HEAD"]);
         const rootSource = (yield* driver.getReviewDiffPreview({ cwd: upstream, commitSha: root }))
           .sources[0]!;
@@ -1896,7 +1921,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const sha = yield* git(upstream, ["rev-parse", "HEAD"]);
         const cwd = yield* makeTmpDir();
         yield* git(upstream, ["clone", "--depth=1", NodeURL.pathToFileURL(upstream).href, cwd], {
-          GIT_CONFIG_GLOBAL: NodeOS.devNull,
+          GIT_CONFIG_GLOBAL: gitNull,
           GIT_CONFIG_NOSYSTEM: "1",
         });
         assert.equal(yield* git(cwd, ["rev-parse", "--is-shallow-repository"]), "true");
@@ -2168,7 +2193,8 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const cwd = yield* makeTmpDir();
         yield* initRepoWithCommit(cwd);
         const driver = yield* GitVcsDriver.GitVcsDriver;
-        yield* writeTextFile(cwd, ":(exclude)after.ts", "literal pathspec contents\n");
+        const literalPath = windowsFixture ? "[exclude]after.ts" : ":(exclude)after.ts";
+        yield* writeTextFile(cwd, literalPath, "literal pathspec contents\n");
         yield* writeTextFile(cwd, "ordinary.ts", "ordinary contents\n");
         const indexBefore = yield* git(cwd, ["ls-files", "--stage"]);
 
@@ -2180,14 +2206,14 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const scoped = yield* driver.getReviewDiffPreview({
           cwd,
           file: {
-            path: ":(exclude)after.ts",
+            path: literalPath,
             previousPath: null,
             sourceKind: "working-tree",
           },
         });
         const scopedSource = scoped.sources.find((source) => source.kind === "working-tree")!;
         assert.deepStrictEqual(scopedSource.files, [
-          { path: ":(exclude)after.ts", previousPath: null, additions: 1, deletions: 0 },
+          { path: literalPath, previousPath: null, additions: 1, deletions: 0 },
         ]);
         assert.include(scopedSource.diff, "+literal pathspec contents");
         assert.notInclude(scopedSource.diff, "ordinary.ts");
@@ -3224,7 +3250,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       Effect.gen(function* () {
         const path = yield* Path.Path;
         // A root basename ending in whitespace catches a root lookup that trims Git's output.
-        const cwd = path.join(yield* makeTmpDir(), "repo ");
+        const cwd = path.join(yield* makeTmpDir(), windowsFixture ? "repo with space" : "repo ");
         yield* (yield* FileSystem.FileSystem).makeDirectory(cwd);
         yield* initRepoWithCommit(cwd);
         yield* writeTextFile(cwd, "nested/tracked.txt", "one\n");
@@ -4184,7 +4210,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           assert.equal(yield* git(created.worktree.path, ["branch", "--show-current"]), branch);
           assert.include(
             yield* git(cwd, ["-c", "core.quotePath=false", "worktree", "list", "--porcelain"]),
-            `worktree ${created.worktree.path}`,
+            `worktree ${created.worktree.path.replaceAll("\\", "/")}`,
           );
           folders.add(folder);
         }

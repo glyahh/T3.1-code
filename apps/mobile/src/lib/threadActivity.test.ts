@@ -1515,7 +1515,7 @@ it("stops stranded thinking after a steer and follows the next thought or tool",
       at,
     );
   expect(rows([first]).find((row) => row.type === "work-toggle")).toMatchObject({
-    summary: "Thinking",
+    summary: "first-thought",
     thought: "first-thought",
     live: true,
     shimmer: true,
@@ -1542,7 +1542,7 @@ it("stops stranded thinking after a steer and follows the next thought or tool",
     expect(live).toHaveLength(1);
     expect(live[0]).toMatchObject(
       items.at(-1)!.type === "reasoning"
-        ? { summary: "Thinking", thought: "next-thought" }
+        ? { summary: "next-thought", thought: "next-thought" }
         : { summary: "Running vp" },
     );
   }

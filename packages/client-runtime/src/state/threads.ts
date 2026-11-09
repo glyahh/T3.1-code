@@ -1,3 +1,4 @@
+import { noteLiveText, clearLiveText } from "../streamingText.ts";
 import {
   isOrchestrationV2WorkActive,
   ORCHESTRATION_V2_WS_METHODS,
@@ -205,6 +206,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   );
   const wakeups = yield* Effect.serviceOption(ConnectionWakeups.ConnectionWakeups);
   const environmentId = supervisor.target.environmentId;
+  const measuredTextRuns = new Set<string>();
   const retained = resumeCache?.snapshot;
   const owner = {};
   if (resumeCache) resumeCache.owner = owner;
@@ -565,6 +567,25 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       return [{ _tag: "applied", projection: next, history: updated.history }, updated];
     };
 
+    if (!waiting) {
+      const previous = yield* SubscriptionRef.get(state);
+      if (Option.isSome(previous.data)) {
+        const known = new Set(previous.data.value.turnItems.map((item) => item.id));
+        for (const { event } of fresh) {
+          if (
+            event.type === "turn-item.updated" &&
+            event.payload.type === "assistant_message" &&
+            !known.has(event.payload.id)
+          ) {
+            noteLiveText(`${environmentId}:${threadId}:${event.payload.runId}:${event.payload.id}`);
+            noteLiveText(
+              `${environmentId}:${threadId}:${event.payload.runId}:${event.payload.messageId}`,
+            );
+            known.add(event.payload.id);
+          }
+        }
+      }
+    }
     const result = yield* SubscriptionRef.modify(
       state,
       (current): readonly [EventApplyResult, EnvironmentThreadState] => {
@@ -583,6 +604,34 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     if (result._tag === "delete") {
       yield* setDeleted();
       return;
+    }
+    if (result._tag === "applied") {
+      for (const item of fresh) {
+        const event = item.event;
+        if (
+          event.type !== "turn-item.updated" ||
+          event.payload.type !== "assistant_message" ||
+          event.payload.text.length === 0 ||
+          event.runId == null ||
+          measuredTextRuns.has(event.runId)
+        )
+          continue;
+        measuredTextRuns.add(event.runId);
+        if (measuredTextRuns.size > 64) {
+          const oldest = measuredTextRuns.values().next().value!;
+          measuredTextRuns.delete(oldest);
+          globalThis.performance?.clearMarks?.(`t3:text-applied:${environmentId}:${oldest}`);
+          globalThis.performance?.clearMarks?.(`t3:text-committed:${environmentId}:${oldest}`);
+        }
+        const mark = `t3:text-applied:${environmentId}:${event.runId}`;
+        globalThis.performance?.clearMarks?.(mark);
+        globalThis.performance?.mark?.(mark);
+        yield* Effect.logInfo("client.latency.first_assistant_text_applied", {
+          environmentId,
+          threadId,
+          runId: event.runId,
+        });
+      }
     }
     if (result._tag === "applied" && shouldPersistThread(result.projection, result.history)) {
       const snapshotSequence = yield* SubscriptionRef.get(lastSequence);
@@ -611,6 +660,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     }
 
     if (item.kind === "snapshot") {
+      clearLiveText(`${environmentId}:${threadId}:`);
       yield* SubscriptionRef.set(lastSequence, item.snapshotSequence);
       const hasProgressiveHistory =
         item.historyCursor !== undefined ||

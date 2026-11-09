@@ -886,7 +886,7 @@ export function NewTaskDraftScreen(props: {
   const thread = draftThreadShell({
     environmentId: selectedProject.environmentId,
     projectId: selectedProject.id,
-    threadId: ThreadId.make(creationMetadata.threadId),
+    threadId: flow.draftThreadId ?? ThreadId.make(creationMetadata.threadId),
     modelSelection: flow.selectedModel,
     runtimeMode: flow.runtimeMode,
     interactionMode: flow.interactionMode,

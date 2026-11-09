@@ -7,6 +7,7 @@ import * as McpToolAccess from "../../McpToolAccess.ts";
 import { HtmlPreviewToolkit, HtmlRenderToolkit, type HtmlToolkit } from "./tools.ts";
 
 const INVALID_PAGE_ERRORS = new Set([
+  "HtmlPreviewReferenceError",
   "HtmlRenderImagesNotFoundError",
   "HtmlRenderImageTooLargeError",
   "HtmlRenderPageTooLargeError",
@@ -24,7 +25,11 @@ const handlers = {
   html_preview: McpToolAccess.readsAsCaller((input) =>
     Effect.gen(function* () {
       const htmlRender = yield* HtmlRender.HtmlRender;
-      const { png, ...preview } = yield* htmlRender.preview(input).pipe(Effect.mapError(toFailure));
+      const scope = yield* McpInvocationContext.McpInvocationContext;
+      const { thread } = yield* McpInvocationContext.requireThreadScope(scope, "html_preview");
+      const { png, ...preview } = yield* htmlRender
+        .preview({ ...input, threadId: thread.threadId })
+        .pipe(Effect.mapError(toFailure));
       return {
         ...preview,
         screenshot: {

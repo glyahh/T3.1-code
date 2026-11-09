@@ -99,6 +99,12 @@ it("requires matching saved native state for an unfinished root run", () => {
   const projection = makeProjection();
   assert.equal(restartContinuationRun(projection, now)?.id, runId);
   for (const invalid of [
+    {
+      ...projection,
+      providerThreads: [
+        { ...projection.providerThreads[0]!, nativeMetadata: { resumeRequiresRebuild: true } },
+      ],
+    },
     { ...projection, thread: { ...projection.thread, archivedAt: {} } },
     { ...projection, thread: { ...projection.thread, deletedAt: {} } },
     {

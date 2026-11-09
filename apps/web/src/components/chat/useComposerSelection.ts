@@ -7,6 +7,7 @@ import {
   type EnvironmentId,
   type ModelSelection,
   ProviderInstanceId,
+  CommandId,
   type ServerProvider,
   type ThreadId,
   ProviderInteractionMode,
@@ -14,6 +15,9 @@ import {
 } from "@t3tools/contracts";
 import type { deriveThreadStructureRuntime } from "@t3tools/client-runtime/state/thread-execution";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { orchestrationEnvironment } from "../../state/orchestration";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { randomUUID } from "../../lib/utils";
 import { type SetStateAction } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toastManager } from "../ui/toast";
@@ -80,6 +84,9 @@ export function useComposerSelection(input: ComposerSelectionInput) {
     scheduleComposerFocus,
   } = input;
   const navigate = useNavigate();
+  const prepareProvider = useAtomCommand(orchestrationEnvironment.v2.prepareProvider, {
+    reportFailure: false,
+  });
   const setStickyComposerModelSelection = useComposerDraftStore(
     (store) => store.setStickyModelSelection,
   );
@@ -138,6 +145,58 @@ export function useComposerSelection(input: ComposerSelectionInput) {
         }
       : null,
   );
+
+  const prepareSelection = (selection: ModelSelection) => {
+    if (!activeThread) return;
+    const provider = providerStatuses.find((entry) => entry.instanceId === selection.instanceId);
+    if (
+      (provider?.driver !== "pi" && provider?.driver !== "antigravity") ||
+      (isLocalDraftThread &&
+        (draftThread === null ||
+          (draftThread.envMode === "worktree" && draftThread.worktreePath === null)))
+    )
+      return;
+    void prepareProvider({
+      environmentId: activeThread.environmentId,
+      input: {
+        type: "thread.provider.prepare",
+        commandId: CommandId.make(randomUUID()),
+        threadId: activeThread.id,
+        modelSelection: selection,
+        runtimeMode,
+        interactionMode,
+        ...(isLocalDraftThread && draftThread !== null
+          ? {
+              draft: {
+                projectId: draftThread.projectId,
+                worktreePath: draftThread.worktreePath,
+                runtimeMode,
+                interactionMode,
+              },
+            }
+          : {}),
+      },
+    });
+  };
+  const onPrepareProvider = (instanceId: ProviderInstanceId) => {
+    if (!isLocalDraftThread || activeRuntime !== null || multipleModelSelections !== null) return;
+    const provider = providerStatuses.find((entry) => entry.instanceId === instanceId);
+    if (provider?.driver !== "antigravity" || !provider.enabled || provider.status !== "ready")
+      return;
+    const store = useComposerDraftStore.getState();
+    const selection =
+      store.getComposerDraft(composerDraftTarget)?.modelSelectionByProvider[instanceId] ??
+      store.stickyModelSelectionByProvider[instanceId];
+    if (!selection || getModelDisabledReason(instanceId, selection.model)) return;
+    const model = resolveAppModelSelectionForInstance(
+      instanceId,
+      settings,
+      providerStatuses,
+      selection.model,
+    );
+    if (model === selection.model) prepareSelection(selection);
+  };
+  const onPrepareProviderStable = useStableCallback(onPrepareProvider);
 
   const onProviderModelSelect = (
     instanceId: ProviderInstanceId,
@@ -211,6 +270,7 @@ export function useComposerSelection(input: ComposerSelectionInput) {
       { explicit: true, replaceOptions: true },
     );
     setStickyComposerModelSelection(nextModelSelection);
+    prepareSelection(nextModelSelection);
     if (options?.focusComposer !== false) scheduleComposerFocus();
   };
   const onProviderModelSelectStable = useStableCallback(onProviderModelSelect);
@@ -260,6 +320,7 @@ export function useComposerSelection(input: ComposerSelectionInput) {
     handleRuntimeModeChangeStable,
     onEnvModeChangeStable,
     onProviderModelSelectStable,
+    onPrepareProviderStable,
     onStartFromOriginChange,
     openProviderSetupStable,
     toggleInteractionModeStable,

@@ -523,6 +523,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.runtime-mode.set":
     case "thread.interaction-mode.set":
     case "thread.model-selection.set":
+    case "thread.provider.prepare":
     case "provider-session.detach":
     case "message.dispatch":
     case "notification.delivery.accept":
@@ -2669,7 +2670,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
     const now = yield* DateTime.now;
     const emitEvent = emit(events, command);
-    const thread: OrchestrationV2AppThread = {
+    let thread: OrchestrationV2AppThread = {
       createdBy: command.createdBy,
       creationSource: command.creationSource,
       id: command.threadId,
@@ -2705,6 +2706,35 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       deletedAt: null,
     };
 
+    const draftCandidate =
+      command.importedNativeThread === undefined &&
+      providerSessions.getDraftPreparation !== undefined
+        ? yield* providerSessions.getDraftPreparation({
+            threadId: command.threadId,
+            projectId: command.projectId,
+            modelSelection: command.modelSelection,
+          })
+        : undefined;
+    const draftPreparation =
+      draftCandidate === undefined || providerSessions.getDraftPreparation === undefined
+        ? undefined
+        : yield* providerSessions.getDraftPreparation({
+            threadId: command.threadId,
+            projectId: command.projectId,
+            modelSelection: command.modelSelection,
+            runtimePolicy: yield* runtimePolicy
+              .resolve({ thread, modelSelection: command.modelSelection })
+              .pipe(mapDispatchError(command)),
+            configurationRevision:
+              (yield* (
+                providerAdapters
+                  .getMetadata?.(command.modelSelection.instanceId)
+                  .pipe(mapDispatchError(command)) ?? Effect.void
+              ))?.configurationRevision ?? "static",
+          });
+    if (draftPreparation !== undefined)
+      thread = { ...thread, providerPreparation: draftPreparation.preparation };
+
     yield* emitEvent({
       type: "thread.created",
       threadId: command.threadId,
@@ -2712,6 +2742,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       occurredAt: now,
       payload: thread,
     });
+    if (draftPreparation !== undefined)
+      yield* emitEvent({
+        type: "provider-thread.updated",
+        threadId: command.threadId,
+        providerInstanceId: command.modelSelection.instanceId,
+        occurredAt: now,
+        payload: draftPreparation.providerThread,
+      });
     if (command.importedNativeThread !== undefined) {
       yield* emitEvent({
         type: "provider-thread.updated",
@@ -5717,9 +5755,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       return;
     }
 
-    const activeProviderThread = projection.providerThreads.find(
-      (candidate) => candidate.id === projection.thread.activeProviderThreadId,
-    );
+    const activeProviderThread =
+      projection.providerThreads.find(
+        (candidate) => candidate.id === projection.thread.activeProviderThreadId,
+      ) ??
+      (projection.runs.length === 0
+        ? projection.providerThreads.find(
+            (candidate) =>
+              candidate.id === projection.thread.providerPreparation?.providerThreadId &&
+              candidate.providerInstanceId === modelSelection.instanceId &&
+              candidate.appThreadId === command.threadId &&
+              candidate.ownerNodeId === null,
+          )
+        : undefined);
     const activeRun = projection.runs.find(isActiveRun);
     // A message queued during worktree setup can arrive after that setup failed
     // without a worktree. It waits, held, like the messages queued before the
@@ -10362,7 +10410,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       rootNode === undefined ||
       run.activeAttemptId !== attempt.id ||
       run.status !== "running" ||
-      attempt.status !== "running"
+      attempt.status === "pending"
     )
       return;
     const emitEvent = emit(input.events, input.command);
@@ -10384,15 +10432,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         },
       });
     }
-    yield* emitEvent({
-      ...base,
-      type: "run-attempt.updated",
-      payload: {
-        ...attempt,
-        status: "interrupted",
-        completedAt: input.now,
-      },
-    });
+    // An attempt that already ended keeps its status; only its run was left running.
+    if (attempt.status === "running") {
+      yield* emitEvent({
+        ...base,
+        type: "run-attempt.updated",
+        payload: {
+          ...attempt,
+          status: "interrupted",
+          completedAt: input.now,
+        },
+      });
+    }
     const providerThread = input.projection.providerThreads.find(
       (candidate) => candidate.id === input.providerTurn.providerThreadId,
     );
@@ -11673,6 +11724,21 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ),
       );
     if (projection.thread.deletedAt !== null) return undefined;
+    const preparation = projection.thread.providerPreparation;
+    if (preparation !== undefined)
+      yield* Ref.update(effects, (current) => [
+        ...current,
+        {
+          id: `effect:${command.commandId}:provider-session.cancel-preparation`,
+          commandId: command.commandId,
+          threadId: command.threadId,
+          request: {
+            type: "provider-session.cancel-preparation",
+            providerSessionId: preparation.providerSessionId,
+            preparationCommandId: preparation.commandId,
+          },
+        } satisfies PendingOrchestrationEffectV2,
+      ]);
     // Queued after the interrupt, since a thread's effects run in order.
     const stopDelegatedTasks =
       command.stopDelegatedTasks === false ||
@@ -12825,6 +12891,163 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       }),
     );
 
+  const dispatchProviderPrepare = Effect.fn("Orchestrator.prepareProvider")(function* (
+    command: Extract<OrchestrationV2Command, { type: "thread.provider.prepare" }>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+  ) {
+    const context = yield* projectionStore
+      .getThreadProviderContext(command.threadId, command.modelSelection.instanceId)
+      .pipe(
+        Effect.catchTags({
+          ProjectionStoreThreadNotFoundError: (cause) =>
+            command.draft === undefined ? Effect.fail(cause) : Effect.succeed(null),
+        }),
+        mapDispatchError(command),
+      );
+    if (command.draft !== undefined && context !== null) return;
+    if (context !== null) {
+      if (context.thread.deletedAt !== null || context.thread.archivedAt !== null) return;
+      const running = yield* projectionStore
+        .getRunningTurnContext(command.threadId)
+        .pipe(mapDispatchError(command));
+      if (running.run !== undefined) return;
+    } else if (command.draft === undefined) return;
+    if (
+      command.draft !== undefined &&
+      Option.isNone(yield* projects.get(command.draft.projectId).pipe(mapDispatchError(command)))
+    )
+      return yield* new OrchestratorCommandRejectedError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: "The draft project no longer exists.",
+      });
+    const thread = context?.thread ?? command.draft!;
+    const adapter = yield* providerAdapters
+      .get(command.modelSelection.instanceId)
+      .pipe(mapDispatchError(command));
+    if (adapter.driver !== "pi" && adapter.driver !== "antigravity") return;
+    const metadata = yield* (
+      providerAdapters
+        .getMetadata?.(command.modelSelection.instanceId)
+        .pipe(mapDispatchError(command)) ?? Effect.void
+    );
+    const policy = yield* runtimePolicy
+      .resolve({
+        thread: {
+          ...thread,
+          runtimeMode: command.runtimeMode ?? thread.runtimeMode,
+          interactionMode: command.interactionMode ?? thread.interactionMode,
+        },
+        modelSelection: command.modelSelection,
+      })
+      .pipe(mapDispatchError(command));
+    if (policy.cwd === null) return;
+    yield* refuseAboveDispatchModeLimit(command, command.threadId, policy);
+    const existingDraft =
+      context === null && providerSessions.getDraftPreparation !== undefined
+        ? yield* providerSessions.getDraftPreparation({
+            threadId: command.threadId,
+            projectId: thread.projectId,
+            modelSelection: command.modelSelection,
+            runtimePolicy: policy,
+            configurationRevision: metadata?.configurationRevision ?? "static",
+          })
+        : undefined;
+    const previous =
+      context === null
+        ? existingDraft?.providerThread
+        : rootProviderThreadsForProvider(context, command.modelSelection.instanceId)[0];
+    if (previous?.pendingBackgroundTasks?.length || previous?.nativeMetadata?.resumeRequiresRebuild)
+      return;
+    const now = yield* DateTime.now;
+    const providerSessionId =
+      previous?.providerSessionId ??
+      (yield* providerSessionIdFor({
+        adapter,
+        providerInstanceId: command.modelSelection.instanceId,
+        threadId: command.threadId,
+      }).pipe(mapDispatchError(command)));
+    const providerThread: OrchestrationV2ProviderThread = previous ?? {
+      id: idAllocator.derive.providerThread({
+        driver: adapter.driver,
+        nativeThreadId: `prepare:${command.commandId}`,
+      }),
+      driver: adapter.driver,
+      providerInstanceId: command.modelSelection.instanceId,
+      providerSessionId,
+      appThreadId: command.threadId,
+      ownerNodeId: null,
+      nativeThreadRef: null,
+      nativeConversationHeadRef: null,
+      status: "not_loaded",
+      firstRunOrdinal: null,
+      lastRunOrdinal: null,
+      handoffIds: [],
+      forkedFrom: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const preparation = {
+      commandId: command.commandId,
+      providerSessionId,
+      providerThreadId: providerThread.id,
+      modelSelection: command.modelSelection,
+      runtimeMode: policy.runtimeMode,
+      interactionMode: policy.interactionMode,
+      cwd: policy.cwd,
+      configurationRevision: metadata?.configurationRevision ?? "static",
+      ownsUnsentNativeThread:
+        previous === undefined ||
+        (context?.thread.providerPreparation?.providerThreadId === providerThread.id &&
+          context?.thread.providerPreparation?.ownsUnsentNativeThread === true &&
+          providerThread.firstRunOrdinal === null &&
+          providerThread.lastRunOrdinal === null),
+      ...(previous?.nativeThreadRef?.nativeId == null
+        ? {}
+        : { nativeThreadId: previous.nativeThreadRef.nativeId }),
+    };
+    if (context !== null && previous === undefined)
+      yield* emit(
+        events,
+        command,
+      )({
+        type: "provider-thread.updated",
+        threadId: command.threadId,
+        providerInstanceId: command.modelSelection.instanceId,
+        occurredAt: now,
+        payload: providerThread,
+      });
+    if (context !== null)
+      yield* emit(
+        events,
+        command,
+      )({
+        type: "thread.metadata-updated",
+        threadId: command.threadId,
+        providerInstanceId: context.thread.providerInstanceId,
+        occurredAt: now,
+        payload: { ...context.thread, providerPreparation: preparation },
+      });
+    yield* Ref.update(effects, (current) => [
+      ...current,
+      {
+        id: `effect:${command.commandId}:provider-session.prepare`,
+        commandId: command.commandId,
+        threadId: command.threadId,
+        request: {
+          type: "provider-session.prepare",
+          providerSessionId,
+          providerThreadId: providerThread.id,
+          modelSelection: command.modelSelection,
+          runtimePolicy: policy,
+          configurationRevision: preparation.configurationRevision,
+          ...(context === null ? { draft: { projectId: thread.projectId, providerThread } } : {}),
+        },
+      } satisfies PendingOrchestrationEffectV2,
+    ]);
+  });
+
   const dispatchOnce = Effect.fn("orchestrationV2.dispatch.once")(function* (
     command: OrchestrationV2ServerCommand,
     sideChatIds: ReadonlyArray<ThreadId>,
@@ -12856,6 +13079,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       | undefined;
     let updateDelegatedCompletionOnlyRunId: RunId | undefined;
     switch (command.type) {
+      case "thread.provider.prepare":
+        yield* dispatchProviderPrepare(command, events, effects);
+        break;
       case "thread.create":
         yield* dispatchThreadCreate(command, events);
         break;
@@ -13322,6 +13548,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       Effect.filterOrFail(
         (planned) =>
           planned.events.length > 0 ||
+          command.type === "thread.provider.prepare" ||
           command.type === "thread.background-work.settle" ||
           command.type === "thread.interrupt.unresponsive" ||
           command.type === "thread.stop" ||

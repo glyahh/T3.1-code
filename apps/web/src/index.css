@@ -572,7 +572,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
       100% 100%;
     background-repeat: no-repeat;
     background-clip: text;
-    animation: live-tool-shine 2.2s steps(30) infinite;
+    animation: live-tool-shine 2.2s linear infinite;
     animation-play-state: var(--visible-animation-state, paused);
   }
 }
@@ -602,19 +602,22 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 }
 
 @utility live-activity-focus {
-  --live-activity-focus-width: 4.5rem;
+  --live-activity-focus-width: calc(var(--agent-label-width, 16rem) * 0.6);
 
   right: auto;
   left: calc(-1 * var(--live-activity-focus-width));
-  width: calc(100% + var(--live-activity-focus-width) + var(--live-activity-focus-width));
+  width: calc(
+    var(--agent-label-width, 16rem) + var(--live-activity-focus-width) +
+      var(--live-activity-focus-width)
+  );
   -webkit-mask-image: linear-gradient(
     to right,
     transparent 0,
-    rgb(0 0 0 / 12%) 0.675rem,
-    rgb(0 0 0 / 55%) 1.575rem,
-    black 2.25rem,
-    rgb(0 0 0 / 55%) 2.925rem,
-    rgb(0 0 0 / 12%) 3.825rem,
+    rgb(0 0 0 / 12%) calc(var(--live-activity-focus-width) * 0.15),
+    rgb(0 0 0 / 55%) calc(var(--live-activity-focus-width) * 0.35),
+    black calc(var(--live-activity-focus-width) * 0.5),
+    rgb(0 0 0 / 55%) calc(var(--live-activity-focus-width) * 0.65),
+    rgb(0 0 0 / 12%) calc(var(--live-activity-focus-width) * 0.85),
     transparent var(--live-activity-focus-width),
     transparent 100%
   );
@@ -622,16 +625,16 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   mask-image: linear-gradient(
     to right,
     transparent 0,
-    rgb(0 0 0 / 12%) 0.675rem,
-    rgb(0 0 0 / 55%) 1.575rem,
-    black 2.25rem,
-    rgb(0 0 0 / 55%) 2.925rem,
-    rgb(0 0 0 / 12%) 3.825rem,
+    rgb(0 0 0 / 12%) calc(var(--live-activity-focus-width) * 0.15),
+    rgb(0 0 0 / 55%) calc(var(--live-activity-focus-width) * 0.35),
+    black calc(var(--live-activity-focus-width) * 0.5),
+    rgb(0 0 0 / 55%) calc(var(--live-activity-focus-width) * 0.65),
+    rgb(0 0 0 / 12%) calc(var(--live-activity-focus-width) * 0.85),
     transparent var(--live-activity-focus-width),
     transparent 100%
   );
   mask-repeat: no-repeat;
-  animation: live-activity-focus 2.2s steps(30) infinite;
+  animation: live-activity-focus var(--agent-sweep-duration, 1s) linear infinite;
   animation-play-state: var(--visible-animation-state, paused);
   will-change: var(--visible-animation-will-change, auto);
 
@@ -644,7 +647,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
 @utility live-activity-focus-counter {
   width: 100%;
-  animation: live-activity-focus-counter 2.2s steps(30) infinite;
+  animation: live-activity-focus-counter var(--agent-sweep-duration, 1s) linear infinite;
   animation-play-state: var(--visible-animation-state, paused);
   will-change: var(--visible-animation-will-change, auto);
 
@@ -655,7 +658,11 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 }
 
 @utility live-activity-focus-aligned {
-  width: calc(100% - var(--live-activity-focus-width) - var(--live-activity-focus-width));
+  width: max-content;
+  max-width: var(--agent-label-width);
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
   margin-left: var(--live-activity-focus-width);
 }
 
@@ -1169,8 +1176,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   /* Keep every sidebar primitive on the same light surface hierarchy, including
      portaled mobile sheets and settings navigation outside the app sidebar. */
   --sidebar: var(--color-zinc-50);
-  --sidebar-foreground: var(--foreground);
-  --sidebar-muted-foreground: var(--muted-foreground);
+  --sidebar-foreground: var(--unified-canvas-foreground);
+  --sidebar-muted-foreground: var(--unified-canvas-muted-foreground);
   --sidebar-control-surface: var(--color-zinc-100);
   --sidebar-row-hover: var(--color-zinc-25);
   --sidebar-row-active: var(--color-white);
@@ -1264,8 +1271,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     --border: rgb(255 255 255 / 8%);
     --input: rgb(255 255 255 / 18%);
     --sidebar: var(--card);
-    --sidebar-foreground: var(--foreground);
-    --sidebar-muted-foreground: var(--muted-foreground);
+    --sidebar-foreground: var(--unified-canvas-foreground);
+    --sidebar-muted-foreground: var(--unified-canvas-muted-foreground);
     --sidebar-control-surface: var(--muted);
     --sidebar-row-hover: color-mix(in srgb, var(--contrast-foreground) 8%, transparent);
     --sidebar-row-active: color-mix(in srgb, var(--contrast-foreground) 11%, transparent);
@@ -2036,6 +2043,10 @@ code {
   text-decoration: none;
 }
 
+.chat-markdown-file-link [data-slot="context-chip-label"] {
+  text-decoration-style: dotted;
+}
+
 /* File links and context chips own their color and focus ring. */
 .chat-markdown a:not(.chat-markdown-file-link, :has([data-slot="context-chip-label"])) {
   color: var(--info-foreground);
@@ -2208,7 +2219,7 @@ code {
   .chat-markdown[data-streaming] > *,
   .chat-markdown[data-streaming] .chat-markdown-shiki,
   .chat-markdown[data-streaming] .chat-markdown-mermaid {
-    transition: opacity 600ms ease-out;
+    transition: opacity var(--agent-insert-duration, 600ms) ease-out;
 
     @starting-style {
       opacity: 0;
@@ -2567,4 +2578,71 @@ code {
 [data-workspace-area]:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
+}
+
+/* Initial estimates from the accepted prototype; calibrate against the reference footage. */
+[data-timeline-row-id] {
+  --agent-state-duration: 300ms;
+  --agent-insert-duration: 240ms;
+  --agent-fold-ms: 240;
+  --agent-fold-duration: 240ms;
+  --agent-sweep-duration: 1000ms;
+  --agent-motion-ease: cubic-bezier(0.22, 0.7, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-timeline-row-id] .agent-status-label {
+    transition: opacity var(--agent-state-duration) var(--agent-motion-ease);
+    @starting-style {
+      opacity: 0;
+    }
+  }
+}
+[data-timeline-row-id][data-agent-motion="original"] {
+  --agent-state-duration: 0ms;
+  --agent-insert-duration: 600ms;
+  --agent-sweep-duration: 1000ms;
+}
+
+[data-timeline-row-id] [data-agent-details] {
+  transition-duration: var(--agent-fold-duration);
+  transition-timing-function: var(--agent-motion-ease);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-timeline-row-id] [data-agent-details] {
+    transition-duration: 0ms;
+  }
+}
+
+@utility text-agent-activity {
+  color: color-mix(in srgb, var(--contrast-foreground) 60%, var(--background));
+  @media (forced-colors: active) {
+    color: GrayText;
+  }
+}
+
+.agent-process-prose :where(p, li) {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+html:root[data-unified-sidebar-background="true"] {
+  --unified-canvas-background: var(--background);
+  --unified-canvas-foreground: var(--foreground);
+  --unified-canvas-muted-foreground: var(--muted-foreground);
+}
+
+html:root[data-unified-sidebar-background="true"],
+html:root[data-unified-sidebar-background="true"] [data-app-sidebar] {
+  --sidebar: var(--unified-canvas-background);
+  --sidebar-foreground: var(--unified-canvas-foreground);
+  --sidebar-muted-foreground: var(--unified-canvas-muted-foreground);
+  --sidebar-stage-fade: var(--unified-canvas-background);
+}
+
+html:root[data-unified-sidebar-background="true"] [data-app-sidebar].surface-grain,
+html:root[data-unified-sidebar-background="true"] [data-app-sidebar] [data-sidebar="sidebar"] {
+  background-color: var(--unified-canvas-background);
+  background-image: none;
 }

@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import { useAtomValue } from "@effect/atom-react";
 import type { OtlpEndpointCheckResult, OtlpSignal, ServerObservability } from "@t3tools/contracts";
 import { useEffect, useEffectEvent, useState } from "react";
@@ -72,12 +73,14 @@ function endpointStatus(url: string, check: EndpointCheck | undefined) {
 }
 
 export function TelemetryExportSettings() {
+  const settingsText = useSettingsText();
+
   const { environment, scope } = useSettingsScope();
   if (scope.kind !== "environment" || !environment) {
     return (
-      <SettingsSection title="OpenTelemetry export" id="telemetry-export">
+      <SettingsSection title={settingsText("OpenTelemetry export")} id="telemetry-export">
         <SettingsScopeNotice target="environment">
-          Choose one environment to configure its telemetry exports.
+          {settingsText("Choose one environment to configure its telemetry exports.")}
         </SettingsScopeNotice>
       </SettingsSection>
     );
@@ -86,6 +89,8 @@ export function TelemetryExportSettings() {
 }
 
 function TelemetryExportForm() {
+  const settingsText = useSettingsText();
+
   const { environment } = useSettingsScope();
   const saved = useScopedSettings((settings) => settings.observability);
   const [draft, setDraft] = useState<Partial<typeof saved>>({});
@@ -143,7 +148,7 @@ function TelemetryExportForm() {
   }, [canCheck]);
 
   return (
-    <SettingsSection title="OpenTelemetry export" id="telemetry-export">
+    <SettingsSection title={settingsText("OpenTelemetry export")} id="telemetry-export">
       <form
         className="grid gap-4 px-4 py-4 sm:px-5"
         onSubmit={async (event) => {
@@ -169,13 +174,15 @@ function TelemetryExportForm() {
         }}
       >
         <p className="text-xs text-muted-foreground">
-          Send traces, metrics, and logs to an OTLP HTTP receiver. Restart the server to apply.
-          Environment variables override these settings.
+          {settingsText(
+            "Send traces, metrics, and logs to an OTLP HTTP receiver. Restart the server to apply. Environment variables override these settings.",
+          )}
         </p>
         {!canEdit && (
           <p className="text-xs text-muted-foreground">
-            This connection lacks permission to change settings on{" "}
-            {environment?.label ?? "the selected environment"}.
+            {settingsText("This connection lacks permission to change settings on")}
+            {settingsText(" ")}
+            {settingsText(environment?.label ?? "the selected environment")}.
           </p>
         )}
         {SIGNALS.map((descriptor) => {
@@ -194,9 +201,16 @@ function TelemetryExportForm() {
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-1.5">
                   {status && <ConnectionStatusDot dotClassName={status.dot} />}
-                  <Label htmlFor={key}>{label} endpoint</Label>
+                  <Label htmlFor={key}>
+                    {settingsText(label)}
+                    {settingsText(" endpoint")}
+                  </Label>
                 </div>
-                {status && <span className="text-xs text-muted-foreground">{status.label}</span>}
+                {status && (
+                  <span className="text-xs text-muted-foreground">
+                    {settingsText(status.label)}
+                  </span>
+                )}
               </div>
               <div className="flex gap-2">
                 <Input
@@ -204,8 +218,10 @@ function TelemetryExportForm() {
                   size="sm"
                   type="url"
                   pattern="[Hh][Tt][Tt][Pp][Ss]?://.*"
-                  title="Enter an HTTP or HTTPS endpoint, or leave empty to disable export."
-                  placeholder={`http://localhost:4318/v1/${signal}`}
+                  title={settingsText(
+                    "Enter an HTTP or HTTPS endpoint, or leave empty to disable export.",
+                  )}
+                  placeholder={settingsText("http://localhost:4318/v1/{0}", signal)}
                   value={values[key]}
                   disabled={saving || !canEdit}
                   onChange={(event) => {
@@ -227,17 +243,18 @@ function TelemetryExportForm() {
                     disabled={!isHttpUrl(url) || checks[key]?.result === null}
                     onClick={() => void checkEndpoint(key, signal, url)}
                   >
-                    Test
+                    {settingsText("Test")}
                   </Button>
                 )}
               </div>
               {(saved[key] !== (running?.[key] ?? "") || override?.variable) && (
                 <p className="break-all text-xs text-muted-foreground">
-                  Running: {running?.[key] || "Disabled"}
+                  {settingsText("Running: ")}
+                  {running?.[key] || settingsText("Disabled")}
                   {override?.variable && (
                     <>
-                      {" "}
-                      from <code className="font-mono">{override.variable}</code>
+                      {settingsText(" ")}
+                      {settingsText("from")} <code className="font-mono">{override.variable}</code>
                     </>
                   )}
                 </p>
@@ -247,7 +264,7 @@ function TelemetryExportForm() {
         })}
         <div className="flex items-center justify-between gap-3">
           <p role="status" className="text-xs text-muted-foreground">
-            {message}
+            {settingsText(message)}
           </p>
           <div className="flex shrink-0 gap-2">
             <Button
@@ -266,10 +283,10 @@ function TelemetryExportForm() {
                 }
               }}
             >
-              Discard
+              {settingsText("Discard")}
             </Button>
             <Button type="submit" size="xs" disabled={!changed || saving || !canEdit}>
-              {saving ? "Saving…" : "Save"}
+              {saving ? settingsText("Saving…") : settingsText("Save")}
             </Button>
           </div>
         </div>

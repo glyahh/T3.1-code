@@ -1,3 +1,4 @@
+import { ContentPreviewContext } from "./ContentPreview";
 import { Check, Copy } from "lucide";
 import { PlayIcon, WrapTextIcon } from "lucide-react";
 import { toHtml } from "hast-util-to-html";
@@ -167,7 +168,9 @@ export function MarkdownCodeBlock({
   const wrapLabel = wrapped ? "Disable line wrap" : "Wrap lines";
   const copyLabel = copied ? "Copied" : "Copy code";
   const command = code.trim();
+  const insidePreview = use(ContentPreviewContext);
   const canRun =
+    !insidePreview &&
     onRunShellCommand !== undefined &&
     !isStreaming &&
     /^(?:sh|bash|zsh|fish|shell|powershell|pwsh)$/.test(language) &&

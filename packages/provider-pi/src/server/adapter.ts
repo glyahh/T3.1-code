@@ -508,7 +508,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         id: input.providerSessionId,
         driver: PI_PROVIDER,
         providerInstanceId: options.instanceId,
-        status: "ready",
+        status: "starting",
         cwd,
         model: input.modelSelection.model,
         capabilities: PiProviderCapabilitiesV2,
@@ -652,6 +652,19 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           }),
           Effect.onInterrupt(() => connection.terminate),
         );
+
+      const initialState = yield* Effect.cached(
+        lifecycleRequest({ type: "get_state" }).pipe(
+          Effect.tap(() =>
+            DateTime.now.pipe(
+              Effect.map((updatedAt) => {
+                sessionEntity = { ...sessionEntity, status: "ready", updatedAt };
+              }),
+            ),
+          ),
+        ),
+      );
+      const registrationPermit = yield* Semaphore.make(1);
 
       const tokenUsageFromStats = (
         stats: unknown,
@@ -1758,13 +1771,18 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             const deltaType = recordString(delta, "type");
             const contentIndex = recordNumber(delta, "contentIndex") ?? 0;
             if (deltaType === "text_delta" || deltaType === "thinking_delta") {
+              const text = recordString(delta, "delta") ?? "";
+              if (text.length === 0) return;
               const item = yield* streamItemFor(
                 turn,
                 deltaType === "text_delta" ? "assistant_message" : "reasoning",
                 contentIndex,
               );
-              item.text += recordString(delta, "delta") ?? "";
-              yield* scheduleStreamFlush(turn, item);
+              if (item.completed) return;
+              const firstText = item.kind === "assistant_message" && item.text.length === 0;
+              item.text += text;
+              if (firstText) yield* emitStreamItem(turn, item, true);
+              else yield* scheduleStreamFlush(turn, item);
               return;
             }
             if (deltaType === "text_end" || deltaType === "thinking_end") {
@@ -2199,8 +2217,19 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             "Cannot switch Pi threads while native work is awaiting a turn",
           );
         }
+        const startupState = yield* initialState;
+        if (
+          threadInput.existingProviderThread === undefined &&
+          threadState?.providerThread.appThreadId === threadInput.threadId &&
+          sessionEntity.status === "ready" &&
+          !stopRequested &&
+          !closed
+        ) {
+          return threadState.providerThread;
+        }
         const existing = threadInput.existingProviderThread;
         const resumeId = existing?.nativeThreadRef?.nativeId;
+        const firstRegistration = !registrationAttempted;
         const needsNewSession = resumeId == null && registrationAttempted;
         registrationAttempted = true;
         if (resumeId != null || needsNewSession) {
@@ -2222,7 +2251,10 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             return yield* protocolError("A Pi extension cancelled the session switch");
           }
         }
-        const stateData = yield* request({ type: "get_state" });
+        const stateData =
+          firstRegistration && resumeId == null
+            ? startupState
+            : yield* request({ type: "get_state" });
         if (!modelsDiscovered) {
           const modelsData = yield* request({ type: "get_available_models" }).pipe(
             Effect.orElseSucceed(() => undefined),
@@ -2300,7 +2332,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             providerThread,
           });
         return providerThread;
-      });
+      }, registrationPermit.withPermit);
 
       const applySelection = Effect.fnUntraced(function* (modelSelection: ModelSelection) {
         const thinking = getModelSelectionStringOptionValue(modelSelection, "thinking");
@@ -3026,6 +3058,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
               environment: options.environment,
               mcpSession: undefined,
               extensionPath: undefined,
+              shortLived: true,
               disableExtensions: true,
               disableTools: true,
             });

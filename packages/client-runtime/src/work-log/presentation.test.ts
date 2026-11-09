@@ -9,7 +9,23 @@ import {
   type WorkLogPresentationEntry,
   workEntryIndicatesToolFailure,
   workEntryDisplayIndicatesToolFailure,
+  summarizeToolGroup,
 } from "./presentation.js";
+
+it("counts a streamed operation once using its latest state", () => {
+  const entry: WorkLogPresentationEntry = {
+    id: "read-1",
+    createdAt: "2026-01-01T00:00:00Z",
+    label: "Read file",
+    tone: "tool",
+    itemType: "command_execution",
+    command: "cat package.json",
+    toolLifecycleStatus: "inProgress",
+  };
+  expect(summarizeToolGroup([entry, { ...entry, toolLifecycleStatus: "completed" }]).summary).toBe(
+    summarizeToolGroup([{ ...entry, toolLifecycleStatus: "completed" }]).summary,
+  );
+});
 
 function commandItem(
   fields: Partial<Extract<OrchestrationV2TurnItem, { type: "command_execution" }>> = {},

@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, ProviderDriverKind } from "@t3tools/contracts";
 import { InfoIcon } from "lucide-react";
@@ -21,6 +22,8 @@ export function MultipleAccountsNote({
   readonly environmentId: EnvironmentId;
   readonly driver: ProviderDriverKind;
 }) {
+  const settingsText = useSettingsText();
+
   const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
   const providerName = PROVIDER_NAMES.get(driver);
   const hasSignedInAccount =
@@ -34,14 +37,17 @@ export function MultipleAccountsNote({
       <InfoIcon aria-hidden />
       <AlertDescription>
         <p>
-          We do not recommend managing multiple {providerName} accounts in T3 Code.{" "}
+          {settingsText("We do not recommend managing multiple ")}
+          {providerName}
+          {settingsText(" accounts in T3 Code.")}
+          {settingsText(" ")}
           <a
             href={MULTIPLE_ACCOUNTS_FAQ_URL}
             target="_blank"
             rel="noreferrer"
             className="underline underline-offset-2 hover:text-foreground"
           >
-            More info
+            {settingsText("More info")}
           </a>
         </p>
       </AlertDescription>

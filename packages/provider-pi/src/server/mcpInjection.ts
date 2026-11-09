@@ -244,6 +244,7 @@ export function buildPiRpcLaunch(input: {
   readonly extensionPath: string | undefined;
   readonly sessionPath?: string | undefined;
   readonly ephemeral?: boolean;
+  readonly shortLived?: boolean;
   readonly disableExtensions?: boolean;
   readonly disableTools?: boolean;
   readonly runtimeMode?: "approval-required" | "auto-accept-edits" | "auto" | "full-access";
@@ -289,6 +290,10 @@ export function buildPiRpcLaunch(input: {
     args,
     env: {
       ...environment,
+      // Older Pi ignores this opt-in; an unknown CLI flag would break its probes.
+      ...(input.shortLived === true && environment.PI_OFFLINE === undefined
+        ? { PI_OFFLINE: "1" }
+        : {}),
       ...(hasT3Extension && input.extensionPath !== undefined
         ? { [T3_PI_MCP_EXTENSION_PATH_ENV]: input.extensionPath }
         : {}),

@@ -679,6 +679,20 @@ export const layer: Layer.Layer<
         .getRuntimeRecoveryProjection(projection.thread.id)
         .pipe(Effect.map(selectInheritedBackgroundItems));
       const providerSessionId = providerThread.providerSessionId;
+      const preparation = projection.thread.providerPreparation;
+      const unsentPreparation =
+        preparation?.ownsUnsentNativeThread === true &&
+        preparation.providerThreadId === providerThread.id &&
+        preparation.providerSessionId === providerSessionId &&
+        (preparation.nativeThreadId === undefined ||
+          preparation.nativeThreadId === providerThread.nativeThreadRef?.nativeId) &&
+        (providerThread.firstRunOrdinal === null ||
+          providerThread.firstRunOrdinal === run.ordinal) &&
+        (providerThread.lastRunOrdinal === null || providerThread.lastRunOrdinal === run.ordinal) &&
+        attempt.attemptOrdinal === 1 &&
+        attempt.status === "pending" &&
+        attempt.startedAt === null &&
+        !projection.providerTurns.some((turn) => turn.providerThreadId === providerThread.id);
       const runControls = makeRunControls({
         threadId: projection.thread.id,
         runId: run.id,
@@ -777,7 +791,9 @@ export const layer: Layer.Layer<
           ...(existingSessionProjection === undefined
             ? {}
             : { resumeFromSession: existingSessionProjection }),
-          ...(providerThread.nativeThreadRef?.nativeId == null
+          ...(unsentPreparation ||
+          providerThread.nativeThreadRef?.nativeId == null ||
+          providerThread.nativeMetadata?.resumeRequiresRebuild
             ? {}
             : { initialNativeThreadId: providerThread.nativeThreadRef.nativeId }),
           ...(providerThread.nativeMetadata?.itemIdentityVersion === undefined
@@ -1205,7 +1221,7 @@ export const layer: Layer.Layer<
           });
           return loaded;
         }
-        if (providerThread.nativeThreadRef === null) {
+        if (providerThread.nativeThreadRef === null || unsentPreparation) {
           // Pass the stored provider row for adoption; adapter-minted duplicates make activeProviderThreadId flap.
           return yield* loadFromProvider(
             session.ensureThread({
@@ -1214,7 +1230,14 @@ export const layer: Layer.Layer<
               modelSelection: run.modelSelection,
               runtimePolicy: resolvedRuntimePolicy,
               providerSessionId,
-              existingProviderThread: providerThread,
+              existingProviderThread: unsentPreparation
+                ? {
+                    ...providerThread,
+                    nativeThreadRef: null,
+                    nativeConversationHeadRef: null,
+                    contextUsage: null,
+                  }
+                : providerThread,
             }),
           );
         }

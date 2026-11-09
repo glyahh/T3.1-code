@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import {
   SecretReference,
   type EnvironmentId,
@@ -52,10 +53,12 @@ function SourceLabel(props: {
   readonly icon: ComponentType<{ readonly className?: string }>;
   readonly label: string;
 }) {
+  const settingsText = useSettingsText();
+
   return (
     <span className="flex min-w-0 items-center gap-1.5">
       <props.icon className="size-3.5 shrink-0" />
-      <span className="truncate">{props.label}</span>
+      <span className="truncate">{settingsText(props.label)}</span>
     </span>
   );
 }
@@ -79,6 +82,8 @@ export function SecretSourceInput({
   children,
   ...rest
 }: SecretSourceInputProps) {
+  const settingsText = useSettingsText();
+
   // A provider picked here applies once a reference for it is committed.
   const [pendingProvider, setPendingProvider] = useState<SecretProviderId | null>(null);
   const [rejectedReference, setRejectedReference] = useState<string | null>(null);
@@ -112,7 +117,7 @@ export function SecretSourceInput({
         <SelectTrigger
           size="sm"
           className="w-auto min-w-0 shrink-0"
-          aria-label={`${label} source`}
+          aria-label={settingsText("{0} source", label)}
           title={provider === null ? "Value" : providerLabel(provider)}
         >
           <SelectValue>
@@ -121,16 +126,16 @@ export function SecretSourceInput({
         </SelectTrigger>
         <SelectPopup align="start" alignItemWithTrigger={false}>
           <SelectItem value={STORED_VALUE}>
-            <SourceLabel icon={TypeIcon} label="Value" />
+            <SourceLabel icon={TypeIcon} label={settingsText("Value")} />
           </SelectItem>
           {sources.map((source) => (
             <SelectItem key={source.id} value={source.id}>
-              <SourceLabel icon={OnePasswordIcon} label={source.label} />
+              <SourceLabel icon={OnePasswordIcon} label={settingsText(source.label)} />
             </SelectItem>
           ))}
           {provider !== null && !sources.some((source) => source.id === provider) ? (
             <SelectItem value={provider}>
-              <SourceLabel icon={KeyRoundIcon} label={provider} />
+              <SourceLabel icon={KeyRoundIcon} label={settingsText(provider)} />
             </SelectItem>
           ) : null}
         </SelectPopup>
@@ -166,14 +171,14 @@ export function SecretSourceInput({
             onSecretChange(decoded.value);
           }}
           autoComplete="off"
-          placeholder={definition?.referencePlaceholder}
+          placeholder={settingsText(definition?.referencePlaceholder)}
           spellCheck={false}
-          aria-label={`${label} reference`}
+          aria-label={settingsText("{0} reference", label)}
           aria-invalid={rejectedReference !== null}
         />
         {rejectedReference !== null ? (
           <p className="text-2xs text-destructive">
-            {definition?.invalidReferenceMessage ?? "Enter a valid secret reference."}
+            {definition?.invalidReferenceMessage ?? settingsText("Enter a valid secret reference.")}
           </p>
         ) : null}
       </div>

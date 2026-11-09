@@ -21,7 +21,7 @@ jobs:
         run: |
           for directory in control candidate; do
             git init "$directory"
-            git -C "$directory" remote add origin https://github.com/glyahh/t3code.git
+            git -C "$directory" remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
             git -C "$directory" sparse-checkout set --no-cone '/*' '!/.repos/'
           done
           git -C control fetch origin "$BASE_SHA"

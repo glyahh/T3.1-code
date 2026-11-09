@@ -67,20 +67,20 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
   );
 }
 
-export function AppRouteModalClose() {
+export function AppRouteModalClose({ label = "Close" }: { label?: string }) {
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           <DialogPrimitive.Close
-            aria-label="Close"
+            aria-label={label}
             render={<Button size="icon-sm" variant="ghost" />}
           />
         }
       >
         <XIcon />
       </TooltipTrigger>
-      <TooltipPopup side="bottom">Close (Esc)</TooltipPopup>
+      <TooltipPopup side="bottom">{label} (Esc)</TooltipPopup>
     </Tooltip>
   );
 }

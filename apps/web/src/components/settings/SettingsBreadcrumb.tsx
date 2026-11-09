@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
@@ -17,18 +18,20 @@ function settingsBreadcrumbLabel(pathname: string): string | null {
 }
 
 export function SettingsBreadcrumb({ pathname }: { pathname: string }) {
+  const settingsText = useSettingsText();
+
   const sectionLabel = settingsBreadcrumbLabel(pathname);
 
   return (
-    <WorkspaceBreadcrumb ariaLabel="Settings breadcrumb">
+    <WorkspaceBreadcrumb ariaLabel={settingsText("Settings breadcrumb")}>
       {sectionLabel ? (
         <>
-          <WorkspaceBreadcrumbItem>Settings</WorkspaceBreadcrumbItem>
+          <WorkspaceBreadcrumbItem>{settingsText("Settings")}</WorkspaceBreadcrumbItem>
           <WorkspaceBreadcrumbSeparator />
         </>
       ) : null}
       <WorkspaceBreadcrumbItem current className="truncate">
-        {sectionLabel ?? "Settings"}
+        {settingsText(sectionLabel ?? "Settings")}
       </WorkspaceBreadcrumbItem>
     </WorkspaceBreadcrumb>
   );

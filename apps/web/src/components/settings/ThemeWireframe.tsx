@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import { cn } from "../../lib/utils";
 import type { ThemeCardPreviewColors } from "./ThemePreviewCircles";
 
@@ -8,6 +9,8 @@ function ThemeWireframePane({
   colors: ThemeCardPreviewColors;
   clip?: "left" | "right" | undefined;
 }) {
+  const settingsText = useSettingsText();
+
   const line = "rgb(127 127 127 / 0.25)";
   return (
     <span
@@ -83,23 +86,28 @@ function ThemeWireframePane({
           boxShadow: `inset 0 0 0 1px ${line}, 0 2px 5px rgb(0 0 0 / 0.14)`,
         }}
       >
-        {[0, 1, 2].map((row) => (
-          <span
-            className="absolute left-[11%] right-[11%] flex items-center gap-1"
-            key={row}
-            style={{ top: `${10 + row * 30}%`, height: "20%" }}
-          >
+        {settingsText(
+          [0, 1, 2].map((row) => (
             <span
-              className="block aspect-square h-[26%] rounded-full"
-              style={{
-                backgroundColor:
-                  row === 0 ? "#34d399" : row === 1 ? colors.messageAction : "#fbbf24",
-                opacity: 0.55,
-              }}
-            />
-            <span className="block h-[30%] w-[52%] rounded-sm" style={{ backgroundColor: line }} />
-          </span>
-        ))}
+              className="absolute left-[11%] right-[11%] flex items-center gap-1"
+              key={row}
+              style={{ top: `${10 + row * 30}%`, height: "20%" }}
+            >
+              <span
+                className="block aspect-square h-[26%] rounded-full"
+                style={{
+                  backgroundColor:
+                    row === 0 ? "#34d399" : row === 1 ? colors.messageAction : "#fbbf24",
+                  opacity: 0.55,
+                }}
+              />
+              <span
+                className="block h-[30%] w-[52%] rounded-sm"
+                style={{ backgroundColor: line }}
+              />
+            </span>
+          )),
+        )}
       </span>
     </span>
   );

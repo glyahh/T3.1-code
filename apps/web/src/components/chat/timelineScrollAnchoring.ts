@@ -1,3 +1,4 @@
+import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import type { MessageId, RunId } from "@t3tools/contracts";
 
 export interface TimelineRunObservation {
@@ -127,4 +128,15 @@ export function rememberTimelinePosition(
     const oldest = rememberedTimelinePositions.keys().next().value;
     if (oldest !== undefined) rememberedTimelinePositions.delete(oldest);
   }
+}
+
+export function resolveWebTimelineAnchor<Item, Id>(
+  items: readonly Item[],
+  id: Id | null,
+  getId: (item: Item) => Id | null,
+  offset: number,
+) {
+  return resolveChatListAnchoredEndSpace(items, id, (item) => (getId(item) === id ? id : null), {
+    anchorOffset: offset,
+  });
 }

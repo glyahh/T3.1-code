@@ -41,28 +41,39 @@ describe("DesktopUpdates", () => {
     }),
   );
 
-  it.effect("keeps the disabled reason available after configuration and channel changes", () => {
-    const harness = makeHarness({ env: { T3CODE_DISABLE_AUTO_UPDATE: "true" } });
-    const reason = "Automatic updates are disabled by the T3CODE_DISABLE_AUTO_UPDATE setting.";
+  it.effect.each([
+    {
+      options: { env: { T3CODE_DISABLE_AUTO_UPDATE: "true" } },
+      reason: "Automatic updates are disabled by the T3CODE_DISABLE_AUTO_UPDATE setting.",
+    },
+    {
+      options: { customBuild: true },
+      reason: "Official updates are disabled for this local custom build.",
+    },
+  ])(
+    "keeps the disabled reason available after configuration and channel changes",
+    ({ options, reason }) => {
+      const harness = makeHarness(options);
 
-    return Effect.scoped(
-      Effect.gen(function* () {
-        const updates = yield* DesktopUpdates.DesktopUpdates;
-        yield* updates.configure;
+      return Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
 
-        const configured = yield* updates.getState;
-        assert.equal(configured.message, reason);
+          const configured = yield* updates.getState;
+          assert.equal(configured.message, reason);
 
-        const changed = yield* updates.setChannel("nightly");
-        assert.equal(changed.channel, "nightly");
-        assert.equal(changed.enabled, false);
-        assert.equal(changed.status, "disabled");
-        assert.equal(changed.message, reason);
-        assert.equal(harness.sentStates.at(-1)?.message, reason);
-        assert.equal(harness.checkCount(), 0);
-      }),
-    ).pipe(Effect.provide(harness.layer));
-  });
+          const changed = yield* updates.setChannel("nightly");
+          assert.equal(changed.channel, "nightly");
+          assert.equal(changed.enabled, false);
+          assert.equal(changed.status, "disabled");
+          assert.equal(changed.message, reason);
+          assert.equal(harness.sentStates.at(-1)?.message, reason);
+          assert.equal(harness.checkCount(), 0);
+        }),
+      ).pipe(Effect.provide(harness.layer));
+    },
+  );
 
   it.effect("checks for newer releases after an update has been downloaded", () => {
     const harness = makeHarness();

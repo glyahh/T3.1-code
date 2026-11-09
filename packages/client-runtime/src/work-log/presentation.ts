@@ -31,6 +31,10 @@ import {
 
 export type WorkLogToolLifecycleStatus = RuntimeItemStatus | "stopped" | "idle";
 
+export function planningWaitLabel(progressAtMs: number, nowMs: number): string {
+  return nowMs - progressAtMs >= 30_000 ? "Taking longer than expected" : "Planning next move";
+}
+
 export function toolItemForDisplay(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
   switch (item.type) {
     case "command_execution":
@@ -221,6 +225,15 @@ export function liveActivityToolStatus(status: string | undefined, presentTense:
   }
   if (presentTense || status === "inProgress") return "inProgress";
   return "completed";
+}
+
+export function preparingToolLabel(
+  entry: Pick<WorkLogPresentationEntry, "structuredPayload">,
+): string | null {
+  const item = entry.structuredPayload;
+  return item?.type === "dynamic_tool" && item.status === "pending"
+    ? `Preparing ${item.toolName ?? "tool"}`
+    : null;
 }
 
 export function resolveWorkEntryToolPresentation(
@@ -419,6 +432,24 @@ function toolGroupActionCount(
   return changedFiles.size + editsWithoutFileDetails;
 }
 
+const TOOL_ACTION_NOUNS: Record<ToolGroupAction, string> = {
+  "link-pr": "pull request link",
+  "unlink-pr": "pull request unlink",
+  "list-prs": "pull request check",
+  "watch-pr": "pull request watch",
+  "unwatch-pr": "pull request unwatch",
+  read: "file read",
+  edit: "file edit",
+  command: "command",
+  "thread-create": "thread creation",
+  browser: "browser action",
+  device: "device action",
+  "code-search": "code search",
+  search: "web search",
+  other: "tool call",
+  update: "update",
+};
+
 function toolGroupActionLabel(action: ToolGroupAction, count: number): string {
   switch (action) {
     case "link-pr":
@@ -514,10 +545,15 @@ function summaryActionPriority(action: ToolGroupAction | T3McpToolSummaryAction)
   }
 }
 
-export function summarizeToolGroup(entries: ReadonlyArray<WorkLogPresentationEntry>): {
+export function summarizeToolGroup(
+  entries: ReadonlyArray<WorkLogPresentationEntry>,
+  maxActions = 2,
+  mode: "completed" | "attempts" = "completed",
+): {
   summary: string;
   hasFailure: boolean;
 } {
+  entries = [...new Map(entries.map((entry) => [entry.id, entry])).values()];
   const toolEntries = entries.filter((entry) => entry.itemType !== "reasoning");
   if (entries.length > 0 && toolEntries.length === 0) {
     return {
@@ -540,7 +576,7 @@ export function summarizeToolGroup(entries: ReadonlyArray<WorkLogPresentationEnt
       workEntryToolName(entry),
       t3ToolSummaryCall(entry).input,
     );
-    if (entry.toolSource && t3Action === null) {
+    if (mode === "completed" && entry.toolSource && t3Action === null) {
       sources.set(entry.toolSource.key, entry.toolSource);
       continue;
     }
@@ -554,19 +590,28 @@ export function summarizeToolGroup(entries: ReadonlyArray<WorkLogPresentationEnt
     index,
     count: group.entries.length,
     priority: summaryActionPriority(action),
-    ...(group.t3Action
-      ? summarizeT3ToolCalls(group.t3Action, group.entries.map(t3ToolSummaryCall))
-      : {
-          label: toolGroupActionLabel(
-            group.action,
-            toolGroupActionCount(group.action, group.entries),
-          ),
+    ...(mode === "attempts"
+      ? {
+          label: (() => {
+            const count = group.entries.length;
+            const noun = TOOL_ACTION_NOUNS[group.action];
+            return `${count} ${noun}${count === 1 ? "" : noun.endsWith("search") ? "es" : "s"}`;
+          })(),
           failedCount: group.entries.filter(workEntryDisplayIndicatesToolFailure).length,
-        }),
+        }
+      : group.t3Action
+        ? summarizeT3ToolCalls(group.t3Action, group.entries.map(t3ToolSummaryCall))
+        : {
+            label: toolGroupActionLabel(
+              group.action,
+              toolGroupActionCount(group.action, group.entries),
+            ),
+            failedCount: group.entries.filter(workEntryDisplayIndicatesToolFailure).length,
+          }),
   }));
   const selected = [...summaries]
     .sort((a, b) => a.priority - b.priority || a.index - b.index)
-    .slice(0, 2)
+    .slice(0, maxActions)
     .sort((a, b) => a.index - b.index);
   const labels = selected.map(({ label }) => label);
   if (sources.size > 0) {
@@ -585,6 +630,7 @@ export function summarizeToolGroup(entries: ReadonlyArray<WorkLogPresentationEnt
   }
   const sourcedCount = entries.filter(
     (entry) =>
+      mode === "completed" &&
       entry.toolSource !== undefined &&
       resolveT3McpToolDefinition(workEntryToolName(entry)) === null,
   ).length;

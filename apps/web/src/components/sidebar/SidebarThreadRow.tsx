@@ -1,3 +1,4 @@
+import { formatPreciseWorkingDuration } from "../chat/TimelineWorkGroupRows.logic";
 import { ThreadHoverCard, ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { ThreadTerminalStatusButton } from "../ThreadStatusIndicators";
 import { discardComposerDraft } from "../../lib/discardComposerDraft";
@@ -15,10 +16,7 @@ import {
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import { resolveSettledThreadTimestamp } from "@t3tools/client-runtime/state/thread-sort";
 import { type EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
-import {
-  formatWorkingDurationLabel,
-  resolveThreadProviderStack,
-} from "@t3tools/client-runtime/state/models";
+import { resolveThreadProviderStack } from "@t3tools/client-runtime/state/models";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   AuthOrchestrationOperateScope,
@@ -170,7 +168,7 @@ function WorkingDuration(props: { startedAt: string | null }) {
 function WorkingDurationLabel(props: { startedMs: number }) {
   const nowMs = useNowSecond();
   return (
-    <span className="tabular-nums">{formatWorkingDurationLabel(nowMs - props.startedMs)}</span>
+    <span className="tabular-nums">{formatPreciseWorkingDuration(nowMs - props.startedMs)}</span>
   );
 }
 

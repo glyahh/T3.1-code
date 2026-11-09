@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import { useAuth } from "@clerk/react";
 import { Link } from "@tanstack/react-router";
 
@@ -13,9 +14,11 @@ import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings"
 
 /** Features still settling in, and legacy behavior kept for people who rely on it. */
 export function LabsSettingsPanel() {
+  const settingsText = useSettingsText();
+
   return (
     <SettingsPageContainer>
-      <SettingsSection id="beta" title="Beta">
+      <SettingsSection id="beta" title={settingsText("Beta")}>
         <BoringSidebarRow />
         <BoringSidebarMultilineRow />
         {/* Clerk is only mounted when this build has T3 Connect. */}
@@ -29,12 +32,16 @@ export function LabsSettingsPanel() {
 }
 
 function BoringSidebarRow() {
+  const settingsText = useSettingsText();
+
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
     <SettingsRow
       {...searchableSetting("boring-sidebar")}
-      description="Group sidebar threads into project folders. Pinned threads stay on top, and Snoozed and Settled stay below the folders."
+      description={settingsText(
+        "Group sidebar threads into project folders. Pinned threads stay on top, and Snoozed and Settled stay below the folders.",
+      )}
       control={
         <Switch
           checked={settings.boringSidebarEnabled || settings.legacySidebarEnabled}
@@ -42,7 +49,7 @@ function BoringSidebarRow() {
           onCheckedChange={(checked) =>
             updateSettings({ boringSidebarEnabled: Boolean(checked), legacySidebarEnabled: false })
           }
-          aria-label="Boring sidebar (group by project)"
+          aria-label={settingsText("Boring sidebar (group by project)")}
         />
       }
     />
@@ -50,19 +57,23 @@ function BoringSidebarRow() {
 }
 
 function BoringSidebarMultilineRow() {
+  const settingsText = useSettingsText();
+
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
     <SettingsRow
       {...searchableSetting("boring-sidebar-multiline")}
-      description="In the boring sidebar, show folder threads on two lines: the title, then the branch, pull request, and agent."
+      description={settingsText(
+        "In the boring sidebar, show folder threads on two lines: the title, then the branch, pull request, and agent.",
+      )}
       control={
         <Switch
           checked={settings.boringSidebarMultilineRows}
           onCheckedChange={(checked) =>
             updateSettings({ boringSidebarMultilineRows: Boolean(checked) })
           }
-          aria-label="Two-line folder rows"
+          aria-label={settingsText("Two-line folder rows")}
         />
       }
     />
@@ -71,6 +82,8 @@ function BoringSidebarMultilineRow() {
 
 /** Signed out of T3 Connect, the row offers to sign in instead of its switch. */
 function GuestLinksRowWithSignIn() {
+  const settingsText = useSettingsText();
+
   const { isSignedIn } = useAuth();
   const { openAuthPrompt } = useT3ConnectAuthPrompt();
   // `isSignedIn` is undefined until Clerk loads.
@@ -78,10 +91,12 @@ function GuestLinksRowWithSignIn() {
   return (
     <SettingsRow
       {...searchableSetting("guest-links")}
-      description="Share a thread with a guest who watches it live in their browser and sends messages you approve. Sign in to T3 Connect to use guest links."
+      description={settingsText(
+        "Share a thread with a guest who watches it live in their browser and sends messages you approve. Sign in to T3 Connect to use guest links.",
+      )}
       control={
         <Button size="sm" variant="outline" onClick={openAuthPrompt}>
-          Sign in
+          {settingsText("Sign in")}
         </Button>
       }
     />
@@ -89,6 +104,8 @@ function GuestLinksRowWithSignIn() {
 }
 
 function GuestLinksRow() {
+  const settingsText = useSettingsText();
+
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
@@ -98,12 +115,14 @@ function GuestLinksRow() {
       settingKeys={["guestSharingEnabled"]}
       description={
         <>
-          Share a thread with a guest who watches it live in their browser and sends messages you
-          approve. Needs T3 Connect: sign in and link this machine in{" "}
+          {settingsText(
+            "Share a thread with a guest who watches it live in their browser and sends messages you approve. Needs T3 Connect: sign in and link this machine in",
+          )}
+          {settingsText(" ")}
           <Link to="/settings/access" className="underline underline-offset-2">
-            Sharing & access
+            {settingsText("Sharing & access")}
           </Link>
-          . While it is off, every guest link stops working.
+          {settingsText(". While it is off, every guest link stops working.")}
         </>
       }
       control={
@@ -111,7 +130,7 @@ function GuestLinksRow() {
           settingKeys={["guestSharingEnabled"]}
           checked={settings.guestSharingEnabled}
           onCheckedChange={(checked) => updateSettings({ guestSharingEnabled: Boolean(checked) })}
-          aria-label="Guest links"
+          aria-label={settingsText("Guest links")}
         />
       }
     />
@@ -119,6 +138,8 @@ function GuestLinksRow() {
 }
 
 function LinkedEnvironmentsRow() {
+  const settingsText = useSettingsText();
+
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
@@ -128,12 +149,16 @@ function LinkedEnvironmentsRow() {
       settingKeys={["linkedEnvironmentsEnabled"]}
       description={
         <>
-          Let agents here work on your other machines, and theirs here. Turn it on for each machine,
-          then link them in{" "}
+          {settingsText(
+            "Let agents here work on your other machines, and theirs here. Turn it on for each machine, then link them in",
+          )}
+          {settingsText(" ")}
           <Link to="/settings/connections" className="underline underline-offset-2">
-            Connections
+            {settingsText("Connections")}
           </Link>
-          . While it is off, nothing new starts over a link; tasks already running finish.
+          {settingsText(
+            ". While it is off, nothing new starts over a link; tasks already running finish.",
+          )}
         </>
       }
       control={
@@ -143,7 +168,7 @@ function LinkedEnvironmentsRow() {
           onCheckedChange={(checked) =>
             updateSettings({ linkedEnvironmentsEnabled: Boolean(checked) })
           }
-          aria-label="Linked environments"
+          aria-label={settingsText("Linked environments")}
         />
       }
     />
@@ -151,6 +176,8 @@ function LinkedEnvironmentsRow() {
 }
 
 function SimlockHostsRow() {
+  const settingsText = useSettingsText();
+
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
@@ -160,20 +187,23 @@ function SimlockHostsRow() {
       settingKeys={["simlockDeviceHostsEnabled"]}
       description={
         <>
-          Let the Device panel lease simulators and emulators from your own{" "}
+          {settingsText("Let the Device panel lease simulators and emulators from your own")}
+          {settingsText(" ")}
           <a
             href="https://incubator.callstack.com/simlock/"
             target="_blank"
             rel="noreferrer"
             className="underline underline-offset-2"
           >
-            Simlock
-          </a>{" "}
-          pool, added in{" "}
+            {settingsText("Simlock")}
+          </a>
+          {settingsText(" ")}
+          {settingsText("pool, added in")}
+          {settingsText(" ")}
           <Link to="/settings/devices" className="underline underline-offset-2">
-            Devices
+            {settingsText("Devices")}
           </Link>
-          . An alpha that may change or break. T3 Code never installs Simlock.
+          {settingsText(". An alpha that may change or break. T3 Code never installs Simlock.")}
         </>
       }
       control={
@@ -183,7 +213,7 @@ function SimlockHostsRow() {
           onCheckedChange={(checked) =>
             updateSettings({ simlockDeviceHostsEnabled: Boolean(checked) })
           }
-          aria-label="Simlock device hosts"
+          aria-label={settingsText("Simlock device hosts")}
         />
       }
     />

@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 import { Spinner } from "~/components/ui/spinner";
 import { ArchiveIcon, ArchiveX } from "lucide-react";
@@ -21,6 +22,8 @@ import { searchableSetting } from "./settingsSearch";
 import { ProjectFavicon } from "../ProjectFavicon";
 
 export function ArchivedThreadsPanel() {
+  const settingsText = useSettingsText();
+
   const { scope, groups: projectGroups, environments } = useSettingsScope();
   const { unarchiveThread, confirmAndDeleteThread } = useThreadActions();
   const {
@@ -145,7 +148,7 @@ export function ArchivedThreadsPanel() {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Failed to unarchive thread",
+            title: settingsText("Failed to unarchive thread"),
             description: error instanceof Error ? error.message : "An error occurred.",
           }),
         );
@@ -162,7 +165,7 @@ export function ArchivedThreadsPanel() {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Failed to delete thread",
+            title: settingsText("Failed to delete thread"),
             description: error instanceof Error ? error.message : "An error occurred.",
           }),
         );
@@ -175,7 +178,7 @@ export function ArchivedThreadsPanel() {
       {archivedGroups.length === 0 ? (
         <SettingsSection
           id={isLoadingArchive ? undefined : searchableSetting("archive").id}
-          title={searchableSetting("archive").title}
+          title={settingsText(searchableSetting("archive").title)}
         >
           <SettingsRow
             title={
@@ -186,17 +189,17 @@ export function ArchivedThreadsPanel() {
                   <ArchiveIcon className="size-3.5 text-muted-foreground" />
                 )}
                 {isLoadingArchive
-                  ? "Loading archived threads"
+                  ? settingsText("Loading archived threads")
                   : archiveError
-                    ? "Could not load archived threads"
-                    : "No archived threads"}
+                    ? settingsText("Could not load archived threads")
+                    : settingsText("No archived threads")}
               </span>
             }
-            description={
+            description={settingsText(
               isLoadingArchive
                 ? "Checking connected environments."
-                : (archiveError ?? "Archived threads will appear here.")
-            }
+                : (archiveError ?? "Archived threads will appear here."),
+            )}
           />
         </SettingsSection>
       ) : (
@@ -204,7 +207,7 @@ export function ArchivedThreadsPanel() {
           <SettingsSection
             key={key}
             id={index === 0 ? searchableSetting("archive").id : undefined}
-            title={title}
+            title={settingsText(title)}
             icon={<ProjectFavicon project={project} />}
           >
             {projectThreads.map((thread) => (
@@ -227,7 +230,7 @@ export function ArchivedThreadsPanel() {
                       toastManager.add(
                         stackedThreadToast({
                           type: "error",
-                          title: "Archived thread action failed",
+                          title: settingsText("Archived thread action failed"),
                           description:
                             error instanceof Error ? error.message : "An error occurred.",
                         }),
@@ -238,9 +241,10 @@ export function ArchivedThreadsPanel() {
                 title={thread.title}
                 description={
                   <span className={hasMultipleEnvironments ? "block truncate" : undefined}>
-                    {hasMultipleEnvironments ? `${thread.environmentLabel} · ` : null}
-                    Archived <RelativeTime timestamp={thread.archivedAt ?? thread.createdAt} />
-                    {" \u00b7 Created "}
+                    {settingsText(hasMultipleEnvironments ? `${thread.environmentLabel} · ` : null)}
+                    {settingsText("Archived ")}
+                    <RelativeTime timestamp={thread.archivedAt ?? thread.createdAt} />
+                    {settingsText(" \u00b7 Created ")}
                     <RelativeTime timestamp={thread.createdAt} />
                   </span>
                 }
@@ -264,7 +268,7 @@ export function ArchivedThreadsPanel() {
                           toastManager.add(
                             stackedThreadToast({
                               type: "error",
-                              title: "Failed to unarchive thread",
+                              title: settingsText("Failed to unarchive thread"),
                               description:
                                 error instanceof Error ? error.message : "An error occurred.",
                             }),
@@ -274,7 +278,7 @@ export function ArchivedThreadsPanel() {
                     }}
                   >
                     <ArchiveX className="size-3.5" />
-                    <span>Unarchive</span>
+                    <span>{settingsText("Unarchive")}</span>
                   </Button>
                 }
               />

@@ -1,3 +1,4 @@
+import { useSettingsText } from "./settingsText";
 import { SettingsGroup } from "./SettingsGroup";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { usePrimaryEnvironmentId, usePrimaryEnvironment } from "../../state/environments";
@@ -181,12 +182,18 @@ export const SETTINGS_PICKER_TRIGGER_CLASSNAME =
   "min-w-0 max-w-none shrink-0 border-input bg-background font-normal text-foreground shadow-xs/5 hover:bg-accent/50 dark:bg-input/32 [&_svg[data-composer-control-chevron]]:stroke-[1.75] [&_svg[data-composer-control-chevron]]:opacity-70";
 
 export function PolicyTooltip({ children }: { readonly children: string }) {
+  const settingsText = useSettingsText();
+
   return (
     <Tooltip>
       <TooltipTrigger
         delay={200}
         render={
-          <Button size="icon-micro" variant="ghost-muted" aria-label="Background policy details">
+          <Button
+            size="icon-micro"
+            variant="ghost-muted"
+            aria-label={settingsText("Background policy details")}
+          >
             <InfoIcon className="size-3.5" />
           </Button>
         }
@@ -215,6 +222,8 @@ export function SettingsSection({
   variant?: "grouped" | "plain";
   children: ReactNode;
 }) {
+  const settingsText = useSettingsText();
+
   const targetRef = useSettingsSearchTarget<HTMLElement>(sectionProps.id);
 
   return (
@@ -225,7 +234,7 @@ export function SettingsSection({
       className={cn(!hideTitle && "space-y-2.5", className)}
     >
       {hideTitle ? (
-        <h2 className="sr-only">{title}</h2>
+        <h2 className="sr-only">{settingsText(title)}</h2>
       ) : (
         <div
           data-settings-scroll-target
@@ -234,9 +243,9 @@ export function SettingsSection({
           <div className="flex min-w-0 items-center gap-1">
             <h2 className="flex min-h-7 items-center gap-2 text-base font-semibold text-foreground">
               {icon}
-              {title}
+              {settingsText(title)}
             </h2>
-            {titleAction}
+            {settingsText(titleAction)}
           </div>
           <div className="flex min-h-7 min-w-7 items-center justify-end">{headerAction}</div>
         </div>
@@ -255,13 +264,15 @@ export function SettingsUnavailableGroup({
   children: ReactNode;
   message?: ReactNode;
 }) {
+  const settingsText = useSettingsText();
+
   if (message === undefined) return children;
 
   return (
     <div className="border-border/60 bg-muted/20 py-1.5">
       <div className="flex items-start gap-2 px-3 py-2 text-xs leading-relaxed text-muted-foreground sm:px-4">
         <InfoIcon className="mt-0.5 size-3.5 shrink-0 text-warning" />
-        <p>{message}</p>
+        <p>{settingsText(message)}</p>
       </div>
       <div className="[&_h3]:opacity-64 [&_p]:opacity-64">{children}</div>
     </div>
@@ -319,6 +330,8 @@ export function SettingsRow({
   mixed?: boolean;
   children?: ReactNode;
 }) {
+  const settingsText = useSettingsText();
+
   const targetRef = useSettingsSearchTarget<HTMLDivElement>(rowProps.id);
   const primarySettingsAvailable = usePrimarySettingsAvailable();
   const context = useOptionalSettingsScope();
@@ -364,8 +377,8 @@ export function SettingsRow({
   const renderedReset = unavailable ? null : isProjectScope && scopedKeys.length > 0 ? (
     source === "project" || source === "mixed" ? (
       <SettingResetButton
-        label={typeof title === "string" ? title : "override"}
-        tooltip="Reset to inherited value"
+        label={settingsText(typeof title === "string" ? title : "override")}
+        tooltip={settingsText("Reset to inherited value")}
         onClick={() => (onResetOverride ? onResetOverride() : clearOverrides(scopedKeys))}
       />
     ) : null
@@ -389,7 +402,7 @@ export function SettingsRow({
           {control}
         </div>
       </TooltipTrigger>
-      <TooltipPopup side="top">{message}</TooltipPopup>
+      <TooltipPopup side="top">{settingsText(message)}</TooltipPopup>
     </Tooltip>
   );
   const renderedControl =
@@ -467,7 +480,7 @@ export function SettingsRow({
       <div className="flex flex-col gap-3 @min-[32rem]/settings-row:grid @min-[32rem]/settings-row:grid-cols-[minmax(0,1fr)_minmax(10rem,auto)] @min-[32rem]/settings-row:items-center @min-[32rem]/settings-row:gap-8">
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex min-h-5 items-center gap-1.5">
-            <h3 className="text-sm font-medium text-foreground">{title}</h3>
+            <h3 className="text-sm font-medium text-foreground">{settingsText(title)}</h3>
             {renderedInheritance ? (
               <span
                 className={cn(
@@ -487,7 +500,7 @@ export function SettingsRow({
           </div>
           {description ? (
             <p className="max-w-2xl text-balance text-xs leading-normal text-muted-foreground">
-              {description}
+              {settingsText(description)}
             </p>
           ) : null}
           {renderedStatus ? (
@@ -522,6 +535,8 @@ export function SettingResetButton({
   disabled?: boolean;
   onClick: () => void;
 }) {
+  const settingsText = useSettingsText();
+
   return (
     <Tooltip>
       <TooltipTrigger
@@ -529,7 +544,7 @@ export function SettingResetButton({
           <Button
             size="icon-micro"
             variant="ghost-muted"
-            aria-label={`Reset ${label} to default`}
+            aria-label={settingsText("Reset {0} to default", label)}
             disabled={disabled}
             onClick={(event) => {
               event.stopPropagation();

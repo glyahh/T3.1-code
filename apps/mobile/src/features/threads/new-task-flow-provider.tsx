@@ -41,6 +41,9 @@ import { projectEnvironment } from "../../state/projects";
 import { useLinkedEnvironments } from "../../state/peerLinks";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { orchestrationEnvironment } from "../../state/orchestration";
+import { uuidv4 } from "../../lib/uuid";
+import { newTaskDraftThreadId } from "../../state/new-task-draft-key";
 import {
   appendComposerDraftAttachments,
   type ComposerDraftInsertion,
@@ -183,6 +186,7 @@ type NewTaskFlowContextValue = {
   readonly selectEnvironment: (environmentId: EnvironmentId) => void;
   readonly switchEnvironment: (environmentId: EnvironmentId) => Promise<boolean>;
   readonly switchingToEnvironmentId: EnvironmentId | null;
+  readonly draftThreadId?: ThreadId | null;
   readonly setSelectedModelKey: (
     key: string | null,
     options?: ReadonlyArray<ProviderOptionSelection>,
@@ -364,6 +368,10 @@ export function NewTaskFlowProvider(
           : null;
   const activeNewTask = props.active === false ? null : { pendingKey: activePendingKey };
   const selectedProjectDraft = useComposerDraft(selectedProjectDraftKey);
+  const draftThreadId = newTaskDraftThreadId(selectedProjectDraftKey);
+  const prepareProvider = useAtomCommand(orchestrationEnvironment.v2.prepareProvider, {
+    reportFailure: false,
+  });
   const prompt = selectedProjectDraft.text;
   const attachments = selectedProjectDraft.attachments;
   const projectGitStatus = useEnvironmentQuery(
@@ -505,6 +513,35 @@ export function NewTaskFlowProvider(
         : {}),
     });
     setStickyComposerModelSelection(selection);
+    // Keep command identity local so React Compiler can cache the render's model catalog.
+    const threadId = newTaskDraftThreadId(selectedProjectDraftKey);
+    if (
+      selectedProject !== null &&
+      threadId !== null &&
+      (provider?.driver === "pi" || provider?.driver === "antigravity") &&
+      (workspaceMode !== "worktree" || selectedWorktreePath !== null)
+    ) {
+      const nextInteractionMode = resolvePendingTaskInteractionMode({
+        planModeEnabled: legacyPlanModeEnabled,
+        draftInteractionMode: selectedProjectDraft.interactionMode,
+        provider,
+      });
+      void prepareProvider({
+        environmentId: selectedProject.environmentId,
+        input: {
+          type: "thread.provider.prepare",
+          commandId: CommandId.make(uuidv4()),
+          threadId,
+          modelSelection: selection,
+          draft: {
+            projectId: selectedProject.id,
+            worktreePath: selectedWorktreePath,
+            runtimeMode,
+            interactionMode: nextInteractionMode,
+          },
+        },
+      });
+    }
   };
   const setSelectedModelOptions = (options: ReadonlyArray<ProviderOptionSelection> | undefined) => {
     if (!selectedModel || !selectedProjectDraftKey) {
@@ -743,7 +780,7 @@ export function NewTaskFlowProvider(
     const mode = workspaceSelection.mode;
     return {
       environmentId: selectedProject.environmentId,
-      threadId: ThreadId.make(metadata.threadId),
+      threadId: draftThreadId ?? ThreadId.make(metadata.threadId),
       messageId: MessageId.make(metadata.messageId),
       commandId: CommandId.make(metadata.commandId),
       text,
@@ -848,6 +885,7 @@ export function NewTaskFlowProvider(
     selectedEnvironmentId,
     selectedProjectKey,
     selectedModelKey,
+    draftThreadId,
     workspaceMode,
     isGitRepo,
     isGitRepoKnown: knownIsGitRepo !== null,

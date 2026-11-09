@@ -1006,24 +1006,6 @@ export default function ChatView(props: ChatViewProps) {
     setTimelineAnchor({ threadKey: activeThreadKey, messageId: null });
   }
   const timelineAnchorMessageId = timelineAnchor.messageId;
-  // LegendList never recomputes anchored end-space geometry, leaving phantom scroll range after content fits.
-  const anchorRunSettled = (() => {
-    if (timelineAnchorMessageId === null) return false;
-    const anchorRun = serverProjection?.runs.find(
-      (run) => run.userMessageId === timelineAnchorMessageId,
-    );
-    if (anchorRun === undefined) return false;
-    return (
-      anchorRun.status !== "preparing" &&
-      anchorRun.status !== "queued" &&
-      anchorRun.status !== "starting" &&
-      anchorRun.status !== "running" &&
-      anchorRun.status !== "waiting"
-    );
-  })();
-  if (anchorRunSettled) {
-    setTimelineAnchor({ threadKey: activeThreadKey, messageId: null });
-  }
   const activeRightPanelKind = useRightPanelStore((state) =>
     selectActiveRightPanel(state.byThreadKey, activeThreadRef),
   );
@@ -2833,6 +2815,7 @@ export default function ChatView(props: ChatViewProps) {
     handleRuntimeModeChangeStable,
     onEnvModeChangeStable,
     onProviderModelSelectStable,
+    onPrepareProviderStable,
     onStartFromOriginChange,
     openProviderSetupStable,
     toggleInteractionModeStable,
@@ -3186,6 +3169,11 @@ export default function ChatView(props: ChatViewProps) {
     (folders: Parameters<ChatComposerHandle["addDroppedFolders"]>[0]) =>
       composerRef.current?.addDroppedFolders(folders),
   );
+  // Above the early return, where React Compiler can cache it for the side chat pane.
+  const sideChatParentPanel = {
+    openToolDiff: onOpenToolDiffStable,
+    runShellCommand: runSideChatShellCommandStable,
+  };
 
   if (!activeThread) {
     return embedded ? null : <NoActiveThreadState />;
@@ -3205,10 +3193,7 @@ export default function ChatView(props: ChatViewProps) {
       getShortcutContext={getShortcutContextStable}
       onSendAnnotation={sendPreviewAnnotationStable}
       onCloseSurface={closeRightPanelSurface}
-      sideChatParentPanel={{
-        openToolDiff: onOpenToolDiffStable,
-        runShellCommand: runSideChatShellCommandStable,
-      }}
+      sideChatParentPanel={sideChatParentPanel}
       terminal={{
         launchContext: activeTerminalLaunchContext ?? null,
         keybindings,
@@ -3710,6 +3695,7 @@ export default function ChatView(props: ChatViewProps) {
                                 onChangeActivePendingUserInputCustomAnswer
                               }
                               onProviderModelSelect={onProviderModelSelectStable}
+                              onPrepareProvider={onPrepareProviderStable}
                               onOpenProviderSetup={openProviderSetupStable}
                               getModelDisabledReason={getModelDisabledReason}
                               toggleInteractionMode={toggleInteractionModeStable}

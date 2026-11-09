@@ -488,6 +488,7 @@ export interface ChatComposerProps {
     options?: { focusComposer?: boolean },
   ) => void;
   onOpenProviderSetup: (instanceId: ProviderInstanceId) => void;
+  onPrepareProvider?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -585,6 +586,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onPreviousActivePendingUserInputQuestion,
     onChangeActivePendingUserInputCustomAnswer,
     onProviderModelSelect,
+    onPrepareProvider,
     onOpenProviderSetup,
     getModelDisabledReason,
     toggleInteractionMode,
@@ -2331,6 +2333,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       onMultipleModelSelectionsChange={setMultipleModelSelections}
       selectedModelSelection={selectedModelSelection}
       onProviderModelSelect={onProviderModelSelect}
+      onPrepareProvider={onPrepareProvider}
       activeThreadModelSelection={activeThreadModelSelection}
       selectedModelForPickerWithCustomFallback={selectedModelForPickerWithCustomFallback}
       lockedProvider={lockedProvider}
